@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { background: #F8FAFC; color: #0F2854; font-family: Inter, sans-serif; }
+.card { @apply bg-white rounded-2xl border border-slate-200 shadow-sm p-5; }
+.btn-navy { @apply bg-navy text-white px-4 py-2 rounded-xl hover:bg-navy-light transition; }
+.btn-gold { @apply bg-gold text-navy font-semibold px-4 py-2 rounded-xl hover:bg-gold-light transition; }
