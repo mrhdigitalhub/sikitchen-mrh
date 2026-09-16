@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 
 export default function GabunganInventoryMenuResepFinal() {
   // ===== TAB =====
-  const [activeTab, setActiveTab] = useState('inventory') // inventory | menu
+  const [activeTab, setActiveTab] = useState('menu') // inventory | menu
 
   // ===== INVENTORY STATES (SEARCH 200) =====
   const [items, setItems] = useState([])
@@ -275,7 +275,7 @@ export default function GabunganInventoryMenuResepFinal() {
     <div className="space-y-4">
       {/* HEADER + TAB */}
       <div className="bg-[#0A1931] text-white p-3 rounded-xl">
-        <div className="font-bold text-sm">✅ GABUNGAN FINAL - Inventori 9 Bahan + Flow Menu & Resep | Kode Smart BHN-KAT-001 | Search200 + 3 Lapis</div>
+        <div className="font-bold text-sm">✅ Master Menu & Resep (Flow dari Inventori) - BARU! | Kode Smart BHN-KAT-001 | Search200 + 3 Lapis</div>
         <div className="text-[10px] bg-white/10 px-2 py-1 rounded mt-2">{debugMsg}</div>
         <div className="flex gap-2 mt-3">
           <button onClick={()=>setActiveTab('inventory')} className={`px-4 py-2 rounded-lg text-xs font-bold ${activeTab==='inventory'?'bg-[#D4AF37] text-black':'bg-white/10 text-white'}`}>📦 Inventori Stok (Search 200)</button>
