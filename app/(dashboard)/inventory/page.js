@@ -318,15 +318,12 @@ export default function InventoryFinal9BahanSmart() {
   return (
     <div className="space-y-4">
       <div className="bg-[#0A1931] text-white p-3 rounded-xl">
-        <div className="font-bold text-sm">✅ FINAL 9 BAHAN - SMART CODE BHN-KAT-001 + 3 Lapis + Delete</div>
+        <div className="font-bold text-sm">✅ FINAL 9 BAHAN CLEAN - 9 Bahan | Kode Smart | 3 Lapis + Delete</div>
         <div className="text-[11px] text-[#D4AF37] mt-1">
-          Beras digabung jadi 1 | Kode Smart per kategori | 3 Lapis Filter + Supplier | Delete Multi
+          Dashboard Bersih - 9 Bahan Final | Kode Smart BHN-KAT-001 | 3 Lapis Filter + Supplier + Delete Multi
         </div>
         <div className="text-[10px] bg-white/10 px-2 py-1 rounded mt-2">{debugMsg}</div>
-        <div className="flex gap-2 mt-2">
-          <button onClick={handleGabungBeras} className="bg-yellow-500 text-black px-3 py-1 rounded text-[11px] font-bold">🔗 Gabung Beras Jadi 1 (9 Bahan)</button>
-          <button onClick={fixKodeSmart} className="bg-[#D4AF37] text-black px-3 py-1 rounded text-[11px] font-bold">🔧 Fix Kode Smart BHN-KAT-001</button>
-        </div>
+        <div className="text-[10px] text-green-300 mt-1">✅ 9 Bahan Final - Kode Smart Aktif | Beras sudah digabung</div>
       </div>
 
       <div className="bg-white rounded-xl border-2 border-green-400 p-4">
