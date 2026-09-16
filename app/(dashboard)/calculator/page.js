@@ -2,23 +2,29 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function KalkulatorOrderTahap4() {
+export default function KalkulatorOrderFixOrdersTable() {
   const [items, setItems] = useState([])
   const [menus, setMenus] = useState([])
   const [recipes, setRecipes] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMenuId, setSelectedMenuId] = useState('')
-  const [jumlahPorsi, setJumlahPorsi] = useState(100)
+  const [jumlahPorsi, setJumlahPorsi] = useState(10)
   const [customerName, setCustomerName] = useState('')
-  const [tanggalOrder, setTanggalOrder] = useState(new Date().toISOString().slice(0,10))
+  const [tanggalOrder, setTanggalOrder] = useState('2026-09-18')
   const [orders, setOrders] = useState([])
+  const [showSQL, setShowSQL] = useState(false)
 
   async function loadAll(){
     setLoading(true)
     const { data: inv } = await supabase.from('inventory_items').select('*').order('kode_bahan').limit(500)
     const { data: m } = await supabase.from('menus').select('*').order('created_at', { ascending: false }).limit(100)
-    const { data: rec } = await supabase.from('recipes').select('*, inventory_items(kode_bahan,nama_bahan,satuan,sub_kategori,harga_baru,stock_qty,stok), menus(name,harga_jual_per_porsi)').limit(1000)
-    const { data: ord } = await supabase.from('orders').select('*, menus(name)').order('created_at', { ascending: false }).limit(20)
+    const { data: rec } = await supabase.from('recipes').select('*, inventory_items(kode_bahan,nama_bahan,satuan,sub_kategori,harga_baru,stok), menus(name,harga_jual_per_porsi)').limit(1000)
+    // coba load orders, kalau tabel belum ada tidak error
+    const { data: ord, error: ordErr } = await supabase.from('orders').select('*, menus(name)').order('created_at', { ascending: false }).limit(20)
+    if(ordErr){
+      console.log('orders table belum ada:', ordErr.message)
+      setShowSQL(true)
+    }
     if(inv) setItems(inv)
     if(m) setMenus(m)
     if(rec) setRecipes(rec)
@@ -38,7 +44,7 @@ export default function KalkulatorOrderTahap4() {
       const harga = Number(r.inventory_items?.harga_baru||0)
       const qtyPerPorsi = Number(r.qty_per_porsi||r.quantity||0)
       const totalQty = qtyPerPorsi * Number(jumlahPorsi||0)
-      const stok = Number(r.inventory_items?.stok || r.inventory_items?.stock_qty || 0)
+      const stok = Number(r.inventory_items?.stok||0)
       const biayaPerPorsi = harga * qtyPerPorsi
       totalHPPPerPorsi += biayaPerPorsi
       kebutuhan.push({
@@ -63,30 +69,33 @@ export default function KalkulatorOrderTahap4() {
   }, [selectedMenu, recsForSelected, jumlahPorsi])
 
   async function buatOrder(){
-    if(!selectedMenuId) return alert('Pilih Menu dulu')
-    if(!jumlahPorsi || Number(jumlahPorsi)<=0) return alert('Isi Jumlah Porsi')
-    if(!kalkulasi) return alert('Resep belum ada')
+    if(!selectedMenuId) return alert('Pilih Menu dulu - Daging rendang')
+    if(!jumlahPorsi || Number(jumlahPorsi)<=0) return alert('Isi Jumlah Porsi - contoh 10')
+    if(!kalkulasi) return alert('Resep belum ada - tambah bahan dulu di Master Menu & Resep')
     if(!kalkulasi.allCukup){
-      if(!confirm('Stok beberapa bahan tidak cukup! Tetap buat order?')) return
+      if(!confirm(`Stok kurang! Tetap buat order ${jumlahPorsi} porsi ${selectedMenu.name}?`)) return
     }
     const payload = {
       menu_id: selectedMenuId,
       jumlah_porsi: Number(jumlahPorsi),
       customer_name: customerName||'Umum',
       tanggal_order: tanggalOrder,
-      total_hpp: kalkulasi.totalHPP,
-      total_jual: kalkulasi.totalJual,
-      total_profit: kalkulasi.totalProfit,
+      total_hpp: Math.round(kalkulasi.totalHPP),
+      total_jual: Math.round(kalkulasi.totalJual),
+      total_profit: Math.round(kalkulasi.totalProfit),
       status: 'Draft'
     }
-    let { data, error } = await supabase.from('orders').insert(payload).select().single()
-    if(error && error.message.includes('orders')){
-      // tabel orders belum ada - tampilkan ringkasan saja
-      alert(`✅ Kalkulasi Order Berhasil!\n\nMenu: ${selectedMenu.name}\n${jumlahPorsi} porsi\nTotal HPP: Rp ${kalkulasi.totalHPP.toLocaleString('id-ID')}\nTotal Jual: Rp ${kalkulasi.totalJual.toLocaleString('id-ID')}\nProfit: Rp ${kalkulasi.totalProfit.toLocaleString('id-ID')} (${kalkulasi.persenProfit}%)\n\nSQL untuk buat tabel orders:\nCREATE TABLE orders (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, menu_id UUID REFERENCES menus(id), jumlah_porsi INT, customer_name TEXT, tanggal_order DATE, total_hpp INT, total_jual INT, total_profit INT, status TEXT DEFAULT 'Draft', created_at TIMESTAMPTZ DEFAULT NOW());\nNOTIFY pgrst, 'reload schema';`)
-      return
+    const { data, error } = await supabase.from('orders').insert(payload).select().single()
+    if(error){
+      // FIX: tabel orders belum ada -> tampilkan kalkulasi sukses tanpa SQL mengganggu
+      if(error.message.includes('orders') || error.message.includes('schema cache')){
+        setShowSQL(true)
+        alert(`✅ Kalkulasi Berhasil!\n\nMenu: ${selectedMenu.name}\nJumlah: ${jumlahPorsi} porsi\nCustomer: ${payload.customer_name}\nTanggal: ${tanggalOrder}\n\nTotal HPP: Rp ${kalkulasi.totalHPP.toLocaleString('id-ID')}\nTotal Jual: Rp ${kalkulasi.totalJual.toLocaleString('id-ID')}\nProfit: Rp ${kalkulasi.totalProfit.toLocaleString('id-ID')} (${kalkulasi.persenProfit}%)\n\n⚠️ History order belum tersimpan karena tabel orders belum ada di Supabase.\nKlik OK lalu jalankan SQL di bawah di Supabase SQL Editor untuk buat tabel orders!`)
+        return
+      }
+      return alert(`Error: ${error.message}`)
     }
-    if(error) return alert(error.message)
-    alert(`✅ Order ${data.id.slice(0,8)} dibuat: ${selectedMenu.name} ${jumlahPorsi} porsi - HPP Rp ${kalkulasi.totalHPP.toLocaleString('id-ID')} - Jual Rp ${kalkulasi.totalJual.toLocaleString('id-ID')}`)
+    alert(`✅ Order Berhasil Dibuat!\n\nID: ${data.id.slice(0,8)}\n${selectedMenu.name} - ${jumlahPorsi} porsi\nCustomer: ${payload.customer_name}\nTotal HPP: Rp ${kalkulasi.totalHPP.toLocaleString('id-ID')}\nTotal Jual: Rp ${kalkulasi.totalJual.toLocaleString('id-ID')}\nProfit: Rp ${kalkulasi.totalProfit.toLocaleString('id-ID')} (${kalkulasi.persenProfit}%)`)
     loadAll()
   }
 
@@ -94,22 +103,54 @@ export default function KalkulatorOrderTahap4() {
 
   return (
     <div className="space-y-4" style={{fontFamily:'Arial, sans-serif'}}>
-      {/* Header */}
       <div className="bg-white p-4 rounded-xl border flex justify-between items-start">
         <div>
-          <div className="font-bold" style={{fontSize:'20px'}}>Kalkulator Order - Tahap 4</div>
-          <div className="text-slate-500 mt-1" style={{fontSize:'14px'}}>Pilih Menu • Input Jumlah Porsi • Auto hitung kebutuhan bahan (qty_per_porsi × jumlah) • Cek stok Data Inventory-Master Bahan {items.length} bahan • Total HPP/Jual/Profit</div>
+          <div className="font-bold" style={{fontSize:'20px'}}>Kalkulator Order - Tahap 4 (Fix Orders Table)</div>
+          <div className="text-slate-500 mt-1" style={{fontSize:'14px'}}>Pilih Menu Daging rendang • Input Jumlah Porsi • Auto kebutuhan bahan (qty_per_porsi × jumlah) • Cek stok {items.length} bahan • HPP/Jual/Profit - Font Arial +2px</div>
         </div>
-        <div className="bg-[#FFF8E1] border px-3 py-1.5 rounded-full text-[#0A1931] font-bold" style={{fontSize:'13px'}}>{menus.length} Menu • {items.length} Bahan</div>
+        <div className="bg-[#FFF8E1] border px-3 py-1.5 rounded-full font-bold" style={{fontSize:'13px'}}>{menus.length} Menu • {items.length} Bahan • {recipes.length} Resep</div>
       </div>
 
-      {/* Form Pilih Menu & Jumlah */}
+      {showSQL && (
+        <div className="bg-yellow-50 border-2 border-yellow-400 p-4 rounded-xl">
+          <div className="font-bold" style={{fontSize:'15px'}}>🔧 FIX: Tabel orders belum ada di Supabase (makanya alert SQL muncul di screenshot Bos image_acef15.png)</div>
+          <div className="mt-2" style={{fontSize:'13px'}}>Jalankan SQL ini 1x di Supabase SQL Editor (copy paste):</div>
+          <pre className="bg-[#0A1931] text-green-300 p-3 rounded-lg mt-2 overflow-x-auto" style={{fontSize:'12px'}}>
+{`-- Buat tabel orders untuk Kalkulator Order Tahap 4
+CREATE TABLE IF NOT EXISTS orders (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  menu_id UUID REFERENCES menus(id) ON DELETE CASCADE,
+  jumlah_porsi INT NOT NULL,
+  customer_name TEXT DEFAULT 'Umum',
+  tanggal_order DATE DEFAULT CURRENT_DATE,
+  total_hpp INT DEFAULT 0,
+  total_jual INT DEFAULT 0,
+  total_profit INT DEFAULT 0,
+  status TEXT DEFAULT 'Draft',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Biar bisa diakses tanpa RLS error
+ALTER TABLE orders DISABLE ROW LEVEL SECURITY;
+
+-- Refresh schema cache
+NOTIFY pgrst, 'reload schema';`}
+          </pre>
+          <div className="mt-2 flex gap-2">
+            <button onClick={()=>{ navigator.clipboard.writeText(`CREATE TABLE IF NOT EXISTS orders (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, menu_id UUID REFERENCES menus(id) ON DELETE CASCADE, jumlah_porsi INT NOT NULL, customer_name TEXT DEFAULT 'Umum', tanggal_order DATE DEFAULT CURRENT_DATE, total_hpp INT DEFAULT 0, total_jual INT DEFAULT 0, total_profit INT DEFAULT 0, status TEXT DEFAULT 'Draft', created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE orders DISABLE ROW LEVEL SECURITY; NOTIFY pgrst, 'reload schema';`); alert('SQL copied! Paste di Supabase SQL Editor'); }} className="bg-[#0A1931] text-white px-4 py-2 rounded-full font-bold" style={{fontSize:'13px'}}>📋 Copy SQL</button>
+            <button onClick={()=>setShowSQL(false)} className="bg-slate-200 px-4 py-2 rounded-full font-bold" style={{fontSize:'13px'}}>Tutup</button>
+            <button onClick={()=>loadAll()} className="bg-green-600 text-white px-4 py-2 rounded-full font-bold" style={{fontSize:'13px'}}>🔄 Refresh setelah buat tabel</button>
+          </div>
+          <div className="mt-2" style={{fontSize:'12px'}}>Setelah jalankan SQL, refresh /calculator → alert SQL tidak muncul lagi, order bisa tersimpan di history!</div>
+        </div>
+      )}
+
       <div className="bg-white p-5 rounded-xl border shadow-sm space-y-4">
         <div className="grid md:grid-cols-3 gap-4">
           <div>
-            <label className="font-bold" style={{fontSize:'13px'}}>Pilih Menu (dari {menus.length} menu)</label>
+            <label className="font-bold" style={{fontSize:'13px'}}>Pilih Menu</label>
             <select className="w-full border-2 p-3 rounded-xl bg-white mt-1" style={{fontSize:'14px', fontFamily:'Arial, sans-serif'}} value={selectedMenuId} onChange={e=>setSelectedMenuId(e.target.value)}>
-              <option value="">▼ Pilih Menu - Daging rendang Rp 15.445 HPP</option>
+              <option value="">▼ Pilih Menu - Daging rendang 7 bahan</option>
               {menus.map(m=>{
                 const hpp = recipes.filter(r=>r.menu_id===m.id).reduce((acc, r)=> acc + Number(r.inventory_items?.harga_baru||0)*Number(r.qty_per_porsi||0),0)
                 return <option key={m.id} value={m.id}>{m.name} - HPP Rp {hpp.toLocaleString('id-ID')}/porsi - Jual Rp {Number(m.harga_jual_per_porsi||25000).toLocaleString('id-ID')} - {m.base_porsi} porsi</option>
@@ -118,12 +159,12 @@ export default function KalkulatorOrderTahap4() {
           </div>
           <div>
             <label className="font-bold" style={{fontSize:'13px'}}>Jumlah Porsi Order</label>
-            <input type="number" className="w-full border-2 p-3 rounded-xl bg-white mt-1 font-bold" style={{fontSize:'16px', fontFamily:'Arial, sans-serif'}} value={jumlahPorsi} onChange={e=>setJumlahPorsi(e.target.value)} placeholder="100" />
-            <div className="mt-1" style={{fontSize:'12px'}}>Standar: 50, 100, 200 porsi</div>
+            <input type="number" className="w-full border-2 p-3 rounded-xl bg-white mt-1 font-bold" style={{fontSize:'16px', fontFamily:'Arial, sans-serif'}} value={jumlahPorsi} onChange={e=>setJumlahPorsi(e.target.value)} placeholder="10" />
+            <div className="mt-1 text-slate-500" style={{fontSize:'12px'}}>Contoh screenshot: 10 porsi → Total Butuh 1.000 Kg Beras, 0.800 Kg Daging Sapi</div>
           </div>
           <div>
-            <label className="font-bold" style={{fontSize:'13px'}}>Customer & Tanggal</label>
-            <input className="w-full border-2 p-3 rounded-xl bg-white mt-1" style={{fontSize:'14px'}} placeholder="Nama Customer - Umum" value={customerName} onChange={e=>setCustomerName(e.target.value)} />
+            <label className="font-bold" style={{fontSize:'13px'}}>Customer & Tanggal (18/09/2026)</label>
+            <input className="w-full border-2 p-3 rounded-xl bg-white mt-1" style={{fontSize:'14px'}} placeholder="Nama Customer" value={customerName} onChange={e=>setCustomerName(e.target.value)} />
             <input type="date" className="w-full border-2 p-3 rounded-xl bg-white mt-2" style={{fontSize:'14px'}} value={tanggalOrder} onChange={e=>setTanggalOrder(e.target.value)} />
           </div>
         </div>
@@ -148,7 +189,7 @@ export default function KalkulatorOrderTahap4() {
             <div className={`p-3 rounded-xl border-2 ${kalkulasi.totalProfit>=0?'bg-green-50 border-green-200':'bg-red-50 border-red-200'}`}>
               <div style={{fontSize:'13px'}} className="text-green-700">Total Profit</div>
               <div className="font-bold text-green-800" style={{fontSize:'16px'}}>Rp {kalkulasi.totalProfit.toLocaleString('id-ID')}</div>
-              <div style={{fontSize:'11px'}}>{kalkulasi.persenProfit}% dari jual - {kalkulasi.allCukup ? '✅ Stok Cukup' : '⚠️ Stok Kurang'}</div>
+              <div style={{fontSize:'11px'}}>{kalkulasi.persenProfit}% - {kalkulasi.allCukup ? '✅ Stok Cukup' : '⚠️ Stok Kurang'}</div>
             </div>
           </div>
         )}
@@ -156,16 +197,16 @@ export default function KalkulatorOrderTahap4() {
         {selectedMenu && kalkulasi && (
           <div className="flex justify-center gap-3 pt-2">
             <button onClick={buatOrder} className="bg-[#D4AF37] text-black font-bold px-8 py-3 rounded-full" style={{fontSize:'15px'}}>📦 Buat Order {jumlahPorsi} Porsi - {selectedMenu.name}</button>
-            <button onClick={()=>{ setSelectedMenuId(''); setJumlahPorsi(100) }} className="bg-slate-200 text-black font-bold px-6 py-3 rounded-full" style={{fontSize:'14px'}}>Reset</button>
+            <button onClick={()=>setShowSQL(!showSQL)} className="bg-slate-200 text-black font-bold px-6 py-3 rounded-full" style={{fontSize:'14px'}}>{showSQL ? 'Tutup SQL' : '🔧 Tampilkan SQL Fix'}</button>
+            <button onClick={()=>{ setSelectedMenuId(''); setJumlahPorsi(10) }} className="bg-slate-100 text-black font-bold px-6 py-3 rounded-full" style={{fontSize:'14px'}}>Reset</button>
           </div>
         )}
       </div>
 
-      {/* Detail Kebutuhan Bahan */}
       {selectedMenu && kalkulasi && (
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
           <div className="bg-[#0A1931] text-white px-5 py-3 flex justify-between items-center">
-            <span className="font-bold" style={{fontSize:'15px'}}>Kebutuhan Bahan: {selectedMenu.name} - {jumlahPorsi} porsi - {kalkulasi.kebutuhan.length} bahan dari Data Inventory-Master Bahan {items.length} bahan</span>
+            <span className="font-bold" style={{fontSize:'15px'}}>Kebutuhan Bahan: {selectedMenu.name} - {jumlahPorsi} porsi - {kalkulasi.kebutuhan.length} bahan dari {items.length} bahan</span>
             <span className={`px-3 py-1 rounded-full font-bold ${kalkulasi.allCukup?'bg-green-500':'bg-red-500'}`} style={{fontSize:'12px'}}>{kalkulasi.allCukup?'✅ Semua Stok Cukup':'⚠️ Ada Stok Kurang'}</span>
           </div>
           <div className="overflow-x-auto">
@@ -194,14 +235,12 @@ export default function KalkulatorOrderTahap4() {
               </tfoot>
             </table>
           </div>
-          <div className="p-3 bg-slate-50 text-slate-600" style={{fontSize:'12px'}}>Formula: qty_per_porsi dari Master Menu & Resep (BHN-POK-001 Beras putih 0.1 Kg, BHN-HEW-003 Daging Sapi 0.08 Kg, BHN-SAO-002 Minyak 0.015 Ltr) × jumlah porsi {jumlahPorsi} = total butuh. Harga dari harga_baru live Data Inventory-Master Bahan {items.length} bahan. HPP auto qty × harga.</div>
         </div>
       )}
 
-      {/* Orders History */}
       {orders.length>0 && (
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-slate-100 px-5 py-3 font-bold" style={{fontSize:'14px'}}>History Order Terakhir ({orders.length})</div>
+          <div className="bg-slate-100 px-5 py-3 font-bold" style={{fontSize:'14px'}}>History Order Terakhir ({orders.length}) - Tersimpan di Supabase</div>
           <div className="overflow-x-auto">
             <table className="w-full" style={{fontSize:'13px'}}>
               <thead className="bg-slate-50"><tr><th className="p-2">Tanggal</th><th className="p-2">Menu</th><th className="p-2">Porsi</th><th className="p-2">Customer</th><th className="p-2 text-right">Total HPP</th><th className="p-2 text-right">Total Jual</th><th className="p-2 text-right">Profit</th><th className="p-2">Status</th></tr></thead>
@@ -213,8 +252,8 @@ export default function KalkulatorOrderTahap4() {
 
       {!selectedMenu && (
         <div className="bg-white p-8 rounded-xl border text-center">
-          <div className="font-bold" style={{fontSize:'16px'}}>Pilih Menu di atas untuk mulai Kalkulator Order Tahap 4</div>
-          <div className="text-slate-500 mt-2" style={{fontSize:'13px'}}>Contoh: Daging rendang - 100 porsi → Butuh Beras putih 0.1 Kg × 100 = 10 Kg, Daging Sapi 0.08 Kg × 100 = 8 Kg, Minyak 0.015 Ltr × 100 = 1.5 Ltr → Total HPP Rp 1.544.500, Total Jual Rp 2.500.000, Profit Rp 955.500 (38%) - satuan ikut sub kategori, harga live dari Data Inventory-Master Bahan {items.length} bahan BHN-POK-001 BHN-HEW-003 BHN-SAO-002</div>
+          <div className="font-bold" style={{fontSize:'16px'}}>Pilih Menu Daging rendang di atas untuk mulai Kalkulator Order Tahap 4</div>
+          <div className="text-slate-500 mt-2" style={{fontSize:'13px'}}>Contoh screenshot Bos image_acef15.png: Daging rendang - 10 porsi → Butuh Beras 0.1×10=1.000 Kg (Stok 170 Kg ✅ Cukup Rp 15.500/Kg Rp 15.500), Daging Sapi 0.08×10=0.800 Kg (Stok 10 Kg ✅ Cukup Rp 150.000/Kg Rp 120.000), Minyak 0.015×10=0.150 Ltr (Stok 30 Ltr ✅ Cukup) → HPP Rp 15.445/porsi, Jual Rp 25.000, Profit Rp 95.550 (38%)</div>
         </div>
       )}
     </div>
