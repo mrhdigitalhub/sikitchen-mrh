@@ -30,7 +30,9 @@ export default function InventoryV46Final() {
   }
   useEffect(()=>{ load() }, [])
 
-  const namaBahanOptions = useMemo(()=>{ const f = items.filter(it => (it.kategori||'') === form.kategori); return [...new Set(f.map(it => it.nama_bahan||it.name).filter(Boolean))].sort() }, [items, form.kategori])
+  // V4.8 FIX: dropdown tampil semua bahan, bukan filter kategori - biar tinggal klik
+  const namaBahanOptions = useMemo(()=>{ return [...new Set(items.map(it => it.nama_bahan||it.name).filter(Boolean))].sort() }, [items])
+  const namaBahanOptionsByKategori = useMemo(()=>{ const f = items.filter(it => (it.kategori||'') === form.kategori); return [...new Set(f.map(it => it.nama_bahan||it.name).filter(Boolean))].sort() }, [items, form.kategori])
 
   function handleNamaBahanSelect(namaSelected){
     const lower = namaSelected.toLowerCase().trim()
@@ -108,9 +110,11 @@ export default function InventoryV46Final() {
     if(!confirm(`Import ${csvFull.length} bahan?`)) return
     setCsvUploading(true)
     let ok=0, fail=0
+    let lastError=''
     for(let i=0;i<csvFull.length;i+=50){
-      const batch = csvFull.slice(i,i+50).map(r=>({
-        kode_bahan: 'BHN-' + Date.now().toString().slice(-6) + '-' + (i+1),
+      const batchSlice = csvFull.slice(i,i+50)
+      const batch = batchSlice.map((r, idx)=>({
+        kode_bahan: 'BHN-' + Date.now().toString().slice(-6) + '-' + (i+idx+1) + '-' + Math.random().toString(36).slice(2,5).toUpperCase(),
         nama_bahan: r.nama_bahan, name: r.nama_bahan,
         kategori: r.kategori||'Bahan Pokok', sub_kategori: r.sub_kategori||null,
         satuan: r.satuan||'Kg', unit: r.satuan||'Kg',
@@ -120,10 +124,16 @@ export default function InventoryV46Final() {
         perusahaan: 'SIKITCHEN-MRH', status: 'Aktif'
       }))
       const { data, error } = await supabase.from('inventory_items').insert(batch).select()
-      if(error){ console.error(error); fail+=batch.length } else { ok+=data?.length||batch.length }
+      if(error){ console.error('IMPORT ERROR:', error); lastError = error.message; fail+=batch.length } else { ok+=data?.length||batch.length }
     }
-    setDebugMsg(`✅ Import selesai: ${ok} OK, ${fail} gagal`)
-    alert(`✅ Berhasil import ${ok} bahan!`); setCsvPreview([]); setCsvFull([]); setCsvUploading(false); load()
+    if(fail>0){
+      setDebugMsg(`❌ Import gagal: ${ok} OK, ${fail} gagal | Error: ${lastError}`)
+      alert(`❌ Gagal import! ${fail} bahan gagal\nError: ${lastError}\n\nCek Supabase > Table Editor > inventory_items > RLS harus OFF atau ada policy INSERT!`)
+    } else {
+      setDebugMsg(`✅ Import selesai: ${ok} OK, ${fail} gagal`)
+      alert(`✅ Berhasil import ${ok} bahan!`)
+    }
+    setCsvPreview([]); setCsvFull([]); setCsvUploading(false); load()
   }
 
   if(loading) return <div className="p-6">Loading V4.6 FINAL...</div>
@@ -148,8 +158,18 @@ export default function InventoryV46Final() {
           <div className="bg-[#FFF8E1] border-b px-4 py-2 flex justify-between text-[11px]"><span className="font-bold">{isExistingBahan?`🔄 UPDATE: ${existingData?.nama_bahan} | ${existingData?.stok||0} + ${form.stok_tambahan||0}`:'✨ MANUAL SMART'}</span><span className={isExistingBahan?'bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full':'bg-green-100 text-green-700 px-2 py-0.5 rounded-full'}>{isExistingBahan?'UPDATE':'BARU'}</span></div>
           <div className="divide-y divide-slate-200">
             <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-slate-50 px-4 py-3 border-r"><div className="font-bold text-xs">1. Kode</div></div><div className="px-4 py-2.5"><input className="w-full bg-slate-100 border p-2.5 rounded-lg text-sm font-mono" value={kodePreview} readOnly /></div></div>
-            <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-[#FFF8E1] px-4 py-3 border-r"><div className="font-bold text-xs">2. Kategori *</div></div><div className="px-4 py-2.5"><select className="w-full border-2 border-[#D4AF37]/30 p-2.5 rounded-lg text-sm" value={form.kategori} onChange={e=>setForm({...form, kategori: e.target.value, nama_bahan: ''})} required>{kategoris.map(k=><option key={k.nama} value={k.nama}>{k.nama}</option>)}</select></div></div>
-            <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-[#FFF8E1] px-4 py-3 border-r"><div className="font-bold text-xs">3. Nama Bahan * (Dropdown)</div></div><div className="px-4 py-2.5"><input list="namaBahanListV46" className="w-full border-2 border-[#D4AF37]/30 p-2.5 rounded-lg text-sm" placeholder="Ketik atau pilih → Auto-fill" value={form.nama_bahan} onChange={e=>{ setForm({...form, nama_bahan: e.target.value}); if(e.target.value.length>2) handleNamaBahanSelect(e.target.value)}} onBlur={e=>{ if(e.target.value) handleNamaBahanSelect(e.target.value)}} required /><datalist id="namaBahanListV46">{namaBahanOptions.map(n=><option key={n} value={n} />)}</datalist></div></div>
+            <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-[#FFF8E1] px-4 py-3 border-r"><div className="font-bold text-xs">2. Kategori *</div></div><div className="px-4 py-2.5"><select className="w-full border-2 border-[#D4AF37]/30 p-2.5 rounded-lg text-sm" value={form.kategori} onChange={e=>setForm({...form, kategori: e.target.value})} required>{kategoris.map(k=><option key={k.nama} value={k.nama}>{k.nama}</option>)}</select><div className="text-[10px] text-slate-500 mt-1">💡 Dropdown Nama Bahan sekarang tampil semua, tidak filter kategori lagi - tinggal klik!</div></div></div>
+            <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-[#FFF8E1] px-4 py-3 border-r"><div className="font-bold text-xs">3. Nama Bahan * (Dropdown Tinggal Klik)</div></div><div className="px-4 py-2.5">
+              <div className="flex gap-2">
+                <input list="namaBahanListV48" className="w-full border-2 border-[#D4AF37]/30 p-2.5 rounded-lg text-sm" placeholder="Klik panah ↓ atau ketik → Auto-fill stock & harga lama" value={form.nama_bahan} onChange={e=>{ setForm({...form, nama_bahan: e.target.value}); handleNamaBahanSelect(e.target.value)}} onFocus={e=>{ if(form.nama_bahan) handleNamaBahanSelect(form.nama_bahan)}} required />
+                <select className="border-2 border-[#D4AF37]/30 p-2.5 rounded-lg text-sm bg-yellow-50" value="" onChange={e=>{ if(e.target.value){ setForm({...form, nama_bahan: e.target.value}); handleNamaBahanSelect(e.target.value) }}}>
+                  <option value="">▼ Pilih</option>
+                  {namaBahanOptions.map(n=><option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <datalist id="namaBahanListV48">{namaBahanOptions.map(n=><option key={n} value={n} />)}</datalist>
+              <div className="text-[10px] text-green-600 mt-1">Total {namaBahanOptions.length} bahan tersimpan - klik ▼ untuk lihat semua</div>
+            </div></div>
             <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-slate-50 px-4 py-3 border-r"><div className="font-bold text-xs">4. Sub-Kategori (Auto)</div></div><div className="px-4 py-2.5"><input className="w-full border p-2.5 rounded-lg text-sm bg-yellow-50" value={form.sub_kategori} onChange={e=>setForm({...form, sub_kategori: e.target.value})} /></div></div>
             <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-[#FFF8E1] px-4 py-3 border-r"><div className="font-bold text-xs">5. Satuan *</div></div><div className="px-4 py-2.5"><select className="w-full border p-2.5 rounded-lg text-sm" value={form.satuan} onChange={e=>setForm({...form, satuan: e.target.value})}><option>Kg</option><option>Ltr</option><option>Pcs</option><option>Buah</option><option>Ikat</option><option>Karung</option><option>Botol</option><option>Set</option></select></div></div>
             <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]"><div className="bg-[#FFF8E1] px-4 py-3 border-r"><div className="font-bold text-xs">6. Stock {isExistingBahan?'Tambahan':'Saat Ini'} *</div></div><div className="px-4 py-2.5">{isExistingBahan?(<div className="flex gap-2 items-center"><span className="bg-slate-100 border px-3 py-2.5 rounded-lg text-sm font-bold">{existingData?.stok||0}</span><span>+</span><input type="number" className="flex-1 border-2 border-blue-300 p-2.5 rounded-lg text-sm" value={form.stok_tambahan} onChange={e=>setForm({...form, stok_tambahan: e.target.value})} required /></div>):(<input type="number" className="w-full border-2 border-[#D4AF37]/30 p-2.5 rounded-lg text-sm" value={form.stok_tambahan} onChange={e=>setForm({...form, stok_tambahan: e.target.value})} required />)}</div></div>
