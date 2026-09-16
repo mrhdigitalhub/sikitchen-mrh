@@ -2,220 +2,261 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function InventoryPerbaikan12WideBox() {
+export default function InventoryDynamicKategoriSub() {
   const [items, setItems] = useState([])
-  const [kategoris, setKategoris] = useState([])
   const [loading, setLoading] = useState(true)
   const [kodePreview, setKodePreview] = useState('')
   const [debugMsg, setDebugMsg] = useState('')
   const [isExistingBahan, setIsExistingBahan] = useState(false)
   const [existingData, setExistingData] = useState(null)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState({ nama_bahan: '', kategori: 'Bahan Pokok', sub_kategori: '', satuan: 'Kg', stok_tambahan: '', stok_minimum: '5', supplier_nama: '', supplier_wa: '', harga_lama: '', harga_baru: '' })
-  const [selectedIds, setSelectedIds] = useState(new Set())
-  const [showDeleteCart, setShowDeleteCart] = useState(false)
+  const [form, setForm] = useState({ kategori: 'POK', namaBahanKategori: '', sub_kategori: '', satuan: 'Kg', stok_tambahan: '', stok_minimum: '5', supplier_nama: '', supplier_wa: '', harga_baru: '' })
   const [searchQuery, setSearchQuery] = useState('')
   const [filterKategori, setFilterKategori] = useState('Semua')
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 50
 
-  // ✅ 9 KATEGORI TETAP LOCK
-  const kategoriList9 = ['Bahan Pokok','Protein Hewani','Protein Nabati','Sayuran','Bumbu Segar','Bumbu Instan','Saos & Cairan','Pelengkap & garnish','Kemasan /Packing']
-  const kategoriKodeMap = {'Bahan Pokok':'POK','Protein Hewani':'HEW','Protein Nabati':'NAB','Sayuran':'SAY','Bumbu Segar':'BSG','Bumbu Instan':'BIN','Saos & Cairan':'SAO','Pelengkap & garnish':'PLG','Kemasan /Packing':'KEM'}
-  
-  // ✅ MASTER BAHAN JAWA - untuk dropdown per kategori
-  const masterBahanJawa = {
-    'Bahan Pokok': ['Beras putih','Beras merah','Beras ketan','Jagung manis','Tepung terigu','Tepung beras','Gula pasir','Gula merah','Gula jawa','Minyak goreng curah','Tepung tapioka','Beras porang','Jagung pipil'],
-    'Protein Hewani': ['Ayam Potong','Ayam Kampung','Daging Sapi','Daging Kambing','Telur Ayam','Telur Bebek','Ikan Lele','Ikan Nila','Ikan Bandeng','Ikan Tongkol','Udang','Cumi','Ati Ampela','Daging Ayam Fillet','Ikan Teri'],
-    'Protein Nabati': ['Tempe Kedelai','Tahu Kedelai','Tahu Kulit','Oncom','Kacang Tanah','Kacang Hijau','Kacang Kedelai','Kacang Merah'],
-    'Sayuran': ['Bayam','Kangkung','Sawi Hijau','Kol','Wortel','Buncis','Kacang Panjang','Labu Siam','Terong','Timun','Tomat','Kentang','Daun Singkong','Petai','Jengkol','Nangka Muda','Tauge','Jamur Tiram','Daun Jeruk','Daun Salam'],
-    'Bumbu Segar': ['Bawang Merah','Bawang Putih','Cabe Merah Besar','Cabe Rawit','Cabe Keriting','Jahe','Kunyit','Kencur','Lengkuas','Serai','Daun Salam','Daun Jeruk','Kemiri','Ketumbar','Merica','Pala','Asam Jawa','Belimbing Wuluh','Kunyit','Salam'],
-    'Bumbu Instan': ['Kaldu Ayam','Kaldu Sapi','Bumbu Gulai Instan','Bumbu Opor Instan','Bumbu Rendang Instan','Terasi','Bumbu Soto Instan'],
-    'Saos & Cairan': ['Kecap Manis','Kecap Asin','Saus Tiram','Saus Tomat','Saus Sambal','Minyak Goreng','Minyak Wijen','Santan Kara','Santan Segar','Cuka'],
-    'Pelengkap & garnish': ['Bawang Goreng','Kerupuk Udang','Kerupuk Kampung','Emping','Kacang Goreng','Sambal Terasi','Lalapan','Acar'],
-    'Kemasan /Packing': ['Box Nasi Sekat 3','Box Nasi Sekat 4','Dus Snack','Plastik Mika','Sendok Plastik','Tisu','Stiker']
-  }
+  const kategoriList9 = ['POK','HEW','NAB','SAY','BSG','BIN','SAO','PLG','KEM']
+  const kategoriLabel = {'POK':'Bahan Pokok','HEW':'Protein Hewani','NAB':'Protein Nabati','SAY':'Sayuran','BSG':'Bumbu Segar','BIN':'Bumbu Instan','SAO':'Saos & Cairan','PLG':'Pelengkap & garnish','KEM':'Kemasan /Packing'}
 
-  const namaUmumMap = {
-    'beras':'Beras putih', 'beras putih':'Beras putih', 'beras premium':'Beras putih',
-    'ayam':'Ayam Potong', 'ayam potong':'Ayam Potong',
-    'minyak':'Minyak Goreng', 'minyak goreng':'Minyak Goreng',
-  }
+  // ✅ HIERARKI 3 LEVEL DINAMIS - bisa tambah/delete per kategori & sub
+  const [masterHierarchy, setMasterHierarchy] = useState({
+    'POK': {
+      'Beras': ['ketan','merah','porang','putih'],
+      'Jagung': ['Manis'],
+      'Tepung': ['Beras','Tapioka','Terigu']
+    },
+    'HEW': {
+      'Ayam': ['Potong','Kampung','Fillet'],
+      'Daging': ['Sapi','Kambing'],
+      'Ikan Air Tawar': ['Lele','Nila','Bandeng'],
+      'Ikan Laut': ['Tongkol','Teri'],
+      'Seafood': ['Udang','Cumi'],
+      'Telur': ['Ayam','Bebek'],
+      'Jeroan': ['Ati Ampela']
+    },
+    'NAB': {
+      'Olahan Kedelai': ['Tempe Kedelai','Tahu Kedelai','Tahu Kulit'],
+      'Kacang-kacangan': ['Tanah','Hijau','Kedelai','Merah'],
+      'Fermentasi': ['Oncom']
+    },
+    'SAY': {
+      'Daun': ['Bayam','Kangkung','Sawi Hijau','Kol','Daun Singkong'],
+      'Polong': ['Buncis','Kacang Panjang','Petai','Jengkol'],
+      'Buah': ['Terong','Timun','Tomat','Labu Siam','Nangka Muda'],
+      'Umbi Akar': ['Wortel'],
+      'Umbi Batang': ['Kentang'],
+      'Tunas': ['Tauge'],
+      'Jamur': ['Jamur Tiram'],
+      'Daun Aromatik': ['Daun Jeruk','Daun Salam']
+    },
+    'BSG': {
+      'Umbi Lapis': ['Bawang Merah','Bawang Putih'],
+      'Buah Pedas': ['Cabe Merah Besar','Cabe Rawit','Cabe Keriting'],
+      'Rimpang': ['Jahe','Kunyit','Kencur','Lengkuas'],
+      'Batang Aromatik': ['Serai'],
+      'Daun Aromatik': ['Daun Salam','Daun Jeruk'],
+      'Biji-bijian': ['Kemiri','Ketumbar','Merica','Pala'],
+      'Buah Asam': ['Asam Jawa','Belimbing Wuluh']
+    },
+    'BIN': {
+      'Kaldu': ['Ayam','Sapi'],
+      'Bumbu Racik': ['Gulai','Opor','Rendang','Soto'],
+      'Fermentasi': ['Terasi'],
+      'Gula': ['Jawa','Merah','Pasir']
+    },
+    'SAO': {
+      'Kecap': ['Manis','Asin'],
+      'Saus': ['Tiram','Tomat','Sambal'],
+      'Minyak': ['Goreng','Goreng Curah','Wijen'],
+      'Santan': ['Kara','Segar'],
+      'Cuka': ['Cuka']
+    },
+    'PLG': {
+      'Kerupuk': ['Udang','Kampung','Emping'],
+      'Gorengan': ['Bawang Goreng','Kacang Goreng'],
+      'Sambal': ['Terasi'],
+      'Sayur Segar': ['Lalapan'],
+      'Acar': ['Acar']
+    },
+    'KEM': {
+      'Box': ['Nasi Sekat 3','Nasi Sekat 4'],
+      'Dus': ['Snack'],
+      'Plastik': ['Mika'],
+      'Alat Makan': ['Sendok Plastik'],
+      'Tisu': ['Tisu'],
+      'Label': ['Stiker']
+    }
+  })
 
-  function normalizeNama(str){ return (str||'').toLowerCase().trim().replace(/\s+/g,' ').replace(/[^a-z0-9 ]/g,'') }
-  function getNamaUmum(str){ const n = normalizeNama(str); return namaUmumMap[n] || str.trim() }
-  function isMirip(a,b){
-    const an = normalizeNama(a), bn = normalizeNama(b)
-    const au = normalizeNama(getNamaUmum(a)), bu = normalizeNama(getNamaUmum(b))
-    if(au===bu) return true
-    if(an.includes(bn) || bn.includes(an)) return true
-    const ka = an.split(' ')[0], kb = bn.split(' ')[0]
-    if(ka===kb && ka.length>=3) return true
-    return false
-  }
+  const [showManager, setShowManager] = useState(true)
+  const [newNamaBahanInput, setNewNamaBahanInput] = useState({})
+  const [newSubInput, setNewSubInput] = useState({})
+
+  function normalizeNama(str){ return (str||'').toLowerCase().trim() }
+
   function getNextSmartKode(kategori, existingItems){
-    const kodeKat = kategoriKodeMap[kategori] || 'GEN'
-    const prefix = `BHN-${kodeKat}-`
-    const nums = existingItems.filter(it => (it.kode_bahan||'').startsWith(prefix)).map(it => {
-      const m = (it.kode_bahan||'').match(new RegExp(`^BHN-${kodeKat}-(\\d+)`))
-      return m ? parseInt(m[1],10) : 0
-    })
-    const maxNum = nums.length ? Math.max(...nums) : 0
-    return `${prefix}${String(maxNum+1).padStart(3,'0')}`
+    const prefix = `BHN-${kategori}-`
+    const nums = existingItems.filter(it => (it.kode_bahan||'').startsWith(prefix)).map(it => { const m=(it.kode_bahan||'').match(new RegExp(`^BHN-${kategori}-(\\d+)`)); return m?parseInt(m[1],10):0 })
+    return `${prefix}${String((nums.length?Math.max(...nums):0)+1).padStart(3,'0')}`
   }
 
   async function load() {
     setLoading(true)
-    // ✅ LOCK 9 KATEGORI
-    setKategoris(kategoriList9.map(n=>({nama:n})))
     const { data: inv } = await supabase.from('inventory_items').select('*').order('nama_bahan').limit(500)
-    if(inv){ setItems(inv); setDebugMsg(`✅ PERBAIKAN 1+2 WIDE BOX: ${inv.length} bahan | 9 Kategori LOCK | Dropdown per Kategori + Kotak Diperlebar`) }
+    if(inv){ setItems(inv); setDebugMsg(`✅ DINAMIS: ${inv.length} bahan | 9 Kategori LOCK | Nama Bahan & Sub Kategori bisa + / Delete dinamis`) }
     setLoading(false)
-    setKodePreview(getNextSmartKode('Bahan Pokok', items))
+    setKodePreview(getNextSmartKode('POK', items))
   }
   useEffect(()=>{ load() }, [])
+  useEffect(()=>{ if(!isExistingBahan && form.kategori) setKodePreview(getNextSmartKode(form.kategori, items)) }, [form.kategori, items, isExistingBahan])
 
-  useEffect(()=>{
-    if(!isExistingBahan && form.kategori){
-      setKodePreview(getNextSmartKode(form.kategori, items))
+  const filteredNamaBahanByKategori = useMemo(()=>{
+    const hier = masterHierarchy[form.kategori] || {}
+    return Object.keys(hier).sort()
+  }, [masterHierarchy, form.kategori])
+
+  const filteredSubByNamaBahan = useMemo(()=>{
+    const hier = masterHierarchy[form.kategori] || {}
+    return hier[form.namaBahanKategori] || []
+  }, [masterHierarchy, form.kategori, form.namaBahanKategori])
+
+  // CRUD DINAMIS
+  function addNamaBahanKategori(kategori){
+    const val = (newNamaBahanInput[kategori]||'').trim()
+    if(!val) return alert('Nama bahan/kategori tidak boleh kosong')
+    if(masterHierarchy[kategori][val]) return alert('Sudah ada')
+    setMasterHierarchy(prev=>({...prev, [kategori]: {...prev[kategori], [val]: []}}))
+    setNewNamaBahanInput(prev=>({...prev, [kategori]: ''}))
+  }
+  function deleteNamaBahanKategori(kategori, namaBahan){
+    if(!confirm(`Hapus Nama Bahan/Kategori "${namaBahan}" di ${kategori}? Semua sub-nya akan hilang!`)) return
+    const copy = {...masterHierarchy}
+    delete copy[kategori][namaBahan]
+    setMasterHierarchy(copy)
+    if(form.kategori===kategori && form.namaBahanKategori===namaBahan){
+      setForm(f=>({...f, namaBahanKategori: '', sub_kategori: ''}))
     }
-  }, [form.kategori, items, isExistingBahan])
-
-  // ✅ FILTER NAMA BAHAN BY KATEGORI DIPILIH - untuk dropdown diperlebar
-  const filteredNamaByKategori = useMemo(()=>{
-    // Bahan dari DB yang kategori = form.kategori
-    const dariDB = items.filter(it => it.kategori === form.kategori).map(it => it.nama_bahan||it.name)
-    // Bahan dari master Jawa
-    const dariMaster = masterBahanJawa[form.kategori] || []
-    // Gabung unik
-    const gabung = [...new Set([...dariDB, ...dariMaster])].sort()
-    return gabung
-  }, [items, form.kategori])
-
-  const namaBahanOptionsAll = useMemo(()=> [...new Set(items.map(it => it.nama_bahan||it.name).filter(Boolean))].sort(), [items])
-  const selectedItems = useMemo(()=> items.filter(it => selectedIds.has(it.id)), [items, selectedIds])
-
-  const filteredItems = useMemo(()=>{
-    let filtered = items
-    if(filterKategori !== 'Semua') filtered = filtered.filter(it => it.kategori === filterKategori)
-    if(searchQuery.trim()){
-      const q = normalizeNama(searchQuery)
-      filtered = filtered.filter(it => normalizeNama(it.nama_bahan||it.name||'').includes(q) || normalizeNama(it.kode_bahan||'').includes(q) || normalizeNama(it.supplier_nama||'').includes(q))
+  }
+  function addSubKategori(kategori, namaBahan){
+    const key = `${kategori}__${namaBahan}`
+    const val = (newSubInput[key]||'').trim()
+    if(!val) return alert('Sub kategori tidak boleh kosong')
+    if(masterHierarchy[kategori][namaBahan].includes(val)) return alert('Sub sudah ada')
+    setMasterHierarchy(prev=>({...prev, [kategori]: {...prev[kategori], [namaBahan]: [...prev[kategori][namaBahan], val]}}))
+    setNewSubInput(prev=>({...prev, [key]: ''}))
+  }
+  function deleteSubKategori(kategori, namaBahan, sub){
+    if(!confirm(`Hapus Sub "${sub}" dari ${namaBahan} - ${kategori}?`)) return
+    setMasterHierarchy(prev=>({...prev, [kategori]: {...prev[kategori], [namaBahan]: prev[kategori][namaBahan].filter(s=>s!==sub)}}))
+    if(form.kategori===kategori && form.namaBahanKategori===namaBahan && form.sub_kategori===sub){
+      setForm(f=>({...f, sub_kategori: ''}))
     }
-    return filtered
-  }, [items, searchQuery, filterKategori])
+  }
 
-  const totalPages = Math.ceil(filteredItems.length / pageSize) || 1
-  const paginatedItems = useMemo(()=> filteredItems.slice((currentPage-1)*pageSize, currentPage*pageSize), [filteredItems, currentPage])
-  useEffect(()=>{ setCurrentPage(1) }, [searchQuery, filterKategori])
-
-  function handleNamaBahanSelect(namaSelected){
-    if(!namaSelected.trim()) return
-    const found = items.find(it => isMirip(namaSelected, it.nama_bahan||it.name||''))
-    if(found){
-      setIsExistingBahan(true); setExistingData(found)
-      setForm(prev=>({...prev, nama_bahan: found.nama_bahan||found.name||namaSelected, kategori: found.kategori||prev.kategori, sub_kategori: found.sub_kategori||'', satuan: found.satuan||found.unit||'Kg', stok_minimum: String(found.stok_minimum||'5'), supplier_nama: found.supplier_nama||'', supplier_wa: found.supplier_wa||'', harga_lama: String(found.harga_baru||''), harga_baru: '', stok_tambahan: ''}))
-      setKodePreview(found.kode_bahan)
-      setEditingId(found.id)
-    } else {
-      setIsExistingBahan(false); setExistingData(null); setEditingId(null)
-      setKodePreview(getNextSmartKode(form.kategori, items))
-    }
+  function handleNamaBahanKategoriSelect(val){
+    setForm(prev=>({...prev, namaBahanKategori: val, sub_kategori: ''}))
   }
 
   async function handleSubmit(e){
     e.preventDefault()
-    if(!form.nama_bahan.trim()) return alert('Nama wajib')
-    const namaUmum = getNamaUmum(form.nama_bahan)
-    const foundMirip = items.find(it => isMirip(form.nama_bahan, it.nama_bahan||it.name||''))
-    let finalStok=0, targetId=editingId, kodeFinal=kodePreview, isUpdate=false
-    if(foundMirip){ isUpdate=true; targetId=foundMirip.id; finalStok=Number(foundMirip.stok||0)+Number(form.stok_tambahan||0); kodeFinal=foundMirip.kode_bahan } else { finalStok=Number(form.stok_tambahan)||0 }
-    const payload = { kode_bahan: kodeFinal, nama_bahan: namaUmum.trim(), name: namaUmum.trim(), kategori: form.kategori, sub_kategori: form.sub_kategori||null, satuan: form.satuan, unit: form.satuan, stok: finalStok, stock_qty: finalStok, stok_minimum: Number(form.stok_minimum)||5, min_stock: Number(form.stok_minimum)||5, supplier_nama: form.supplier_nama||null, supplier_wa: form.supplier_wa||null, harga_baru: form.harga_baru?Number(form.harga_baru):0, price_per_unit: form.harga_baru?Number(form.harga_baru):0, perusahaan: 'SIKITCHEN-MRH', status: 'Aktif' }
-    let res
-    if(isUpdate && targetId) res = await supabase.from('inventory_items').update(payload).eq('id', targetId).select().single()
-    else res = await supabase.from('inventory_items').insert(payload).select().single()
+    if(!form.namaBahanKategori.trim() || !form.sub_kategori.trim()) return alert('Nama Bahan/Kategori dan Sub wajib')
+    const namaLengkap = `${form.namaBahanKategori} ${form.sub_kategori}`.trim()
+    const payload = { kode_bahan: kodePreview, nama_bahan: namaLengkap, name: namaLengkap, kategori: form.kategori, sub_kategori: form.sub_kategori, satuan: form.satuan, unit: form.satuan, stok: Number(form.stok_tambahan)||0, stock_qty: Number(form.stok_tambahan)||0, stok_minimum: Number(form.stok_minimum)||5, min_stock: Number(form.stok_minimum)||5, supplier_nama: form.supplier_nama||null, supplier_wa: form.supplier_wa||null, harga_baru: form.harga_baru?Number(form.harga_baru):0, price_per_unit: form.harga_baru?Number(form.harga_baru):0, perusahaan: 'SIKITCHEN-MRH', status: 'Aktif' }
+    const res = await supabase.from('inventory_items').insert(payload).select().single()
     if(res.error) return alert(res.error.message)
-    alert(`✅ ${isUpdate?'UPDATE':'SIMPAN'}: ${res.data.nama_bahan} | ${res.data.kode_bahan}`)
-    setForm({ nama_bahan:'', kategori:form.kategori, sub_kategori:'', satuan:'Kg', stok_tambahan:'', stok_minimum:'5', supplier_nama:form.supplier_nama, supplier_wa:form.supplier_wa, harga_lama:'', harga_baru:'' })
-    setIsExistingBahan(false); setExistingData(null); setEditingId(null); load()
+    alert(`✅ SIMPAN: ${res.data.nama_bahan} | ${res.data.kode_bahan} | ${res.data.kategori} - ${res.data.sub_kategori}`)
+    setForm({ kategori: form.kategori, namaBahanKategori: '', sub_kategori: '', satuan: 'Kg', stok_tambahan: '', stok_minimum: '5', supplier_nama: '', supplier_wa: '', harga_baru: '' })
+    load()
   }
 
-  function toggleSelect(id){ const next=new Set(selectedIds); if(next.has(id)) next.delete(id); else next.add(id); setSelectedIds(next); setShowDeleteCart(next.size>0) }
-  function toggleSelectAllFiltered(){ const ids=paginatedItems.map(it=>it.id); const all=ids.every(id=>selectedIds.has(id)); const next=new Set(selectedIds); if(all) ids.forEach(id=>next.delete(id)); else ids.forEach(id=>next.add(id)); setSelectedIds(next); setShowDeleteCart(next.size>0) }
-  async function handleDeleteSelected(){ if(!confirm(`Hapus ${selectedIds.size} bahan?`)) return; const c=prompt('Ketik HAPUS'); if(c!=='HAPUS') return; await supabase.from('inventory_items').delete().in('id', Array.from(selectedIds)); setSelectedIds(new Set()); setShowDeleteCart(false); load() }
+  const filteredItems = useMemo(()=>{
+    let f = items
+    if(filterKategori !== 'Semua') f = f.filter(it => it.kategori === filterKategori)
+    if(searchQuery.trim()){ const q=normalizeNama(searchQuery); f=f.filter(it=>normalizeNama(it.nama_bahan||'').includes(q)||normalizeNama(it.kode_bahan||'').includes(q)) }
+    return f
+  }, [items, searchQuery, filterKategori])
+  const paginatedItems = useMemo(()=> filteredItems.slice((currentPage-1)*pageSize, currentPage*pageSize), [filteredItems, currentPage])
 
-  if(loading) return <div className="p-6">Loading WIDE BOX...</div>
+  if(loading) return <div className="p-6">Loading DINAMIS...</div>
 
   return (
     <div className="space-y-4">
       <div className="bg-[#0A1931] text-white p-3 rounded-xl">
-        <div className="font-bold text-sm">✅ INVENTORY WIDE BOX - 9 Kategori LOCK + Dropdown per Kategori + Kotak Diperlebar</div>
+        <div className="font-bold text-sm">✅ INVENTORY DINAMIS - Tambah/Delete Kategori & Sub Kategori Dinamis</div>
         <div className="text-[10px] bg-white/10 px-2 py-1 rounded mt-2">{debugMsg}</div>
-        <div className="text-[10px] text-green-300 mt-1">Kotak pilihan diperlebar 350px → 450px | Pilih Kategori = Bahan Pokok → Nama Bahan hanya Beras putih, Beras merah, Jagung (tidak semua 9)</div>
+        <div className="text-[10px] text-green-300 mt-1">Hierarki: KATEGORI (9 LOCK: POK,HEW,NAB,SAY,BSG,BIN,SAO,PLG,KEM) → Nama Bahan/Kategori (Beras,Jagung,Tepung) bisa + / Delete → Sub Kategori (ketan,merah,porang,putih) bisa + / Delete</div>
+      </div>
+
+      <div className="bg-white rounded-xl border-2 border-[#D4AF37]/40 shadow-sm overflow-hidden">
+        <div className="bg-[#FFF8E1] px-4 py-3 flex justify-between items-center">
+          <span className="font-bold text-sm">⚙️ Manager Kategori & Sub Kategori Dinamis (9 Kategori)</span>
+          <button onClick={()=>setShowManager(!showManager)} className="bg-[#0A1931] text-white px-3 py-1.5 rounded-lg text-xs">{showManager?'Sembunyikan':'Tampilkan Manager'}</button>
+        </div>
+        {showManager && (
+          <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
+            {kategoriList9.map(kat=>(
+              <div key={kat} className="border-2 border-slate-200 rounded-xl p-3 bg-slate-50">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-bold text-sm bg-[#0A1931] text-white px-3 py-1 rounded-full">{kat} - {kategoriLabel[kat]} ({Object.keys(masterHierarchy[kat]||{}).length} Nama Bahan)</span>
+                </div>
+                <div className="space-y-2">
+                  {Object.entries(masterHierarchy[kat]||{}).map(([namaBahan, subList])=>(
+                    <div key={namaBahan} className="bg-white border rounded-lg p-2.5">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-xs">📦 {namaBahan} <span className="text-[10px] bg-blue-100 px-2 py-0.5 rounded-full">{subList.length} sub</span></span>
+                        <button onClick={()=>deleteNamaBahanKategori(kat, namaBahan)} className="bg-red-500 text-white px-2 py-1 rounded text-[10px]">🗑️ Delete Nama Bahan</button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {subList.map(sub=>(
+                          <span key={sub} className="bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5">
+                            {sub}
+                            <button onClick={()=>deleteSubKategori(kat, namaBahan, sub)} className="bg-red-400 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px]">x</button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <input className="flex-1 border p-1.5 rounded text-xs" placeholder={`+ Sub baru untuk ${namaBahan} (misal: ketan)`} value={newSubInput[`${kat}__${namaBahan}`]||''} onChange={e=>setNewSubInput(prev=>({...prev, [`${kat}__${namaBahan}`]: e.target.value}))} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); addSubKategori(kat, namaBahan) }}} />
+                        <button onClick={()=>addSubKategori(kat, namaBahan)} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs font-bold">+ Tambah Sub</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2 bg-yellow-50 p-2 rounded-lg border border-yellow-200">
+                  <input className="flex-1 border-2 border-yellow-400 p-2 rounded text-xs font-bold" placeholder={`+ Nama Bahan/Kategori baru di ${kat} (misal: Beras / Jagung / Tepung)`} value={newNamaBahanInput[kat]||''} onChange={e=>setNewNamaBahanInput(prev=>({...prev, [kat]: e.target.value}))} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); addNamaBahanKategori(kat) }}} />
+                  <button onClick={()=>addNamaBahanKategori(kat)} className="bg-[#D4AF37] text-[#0A1931] px-4 py-2 rounded font-bold text-xs">+ Tambah Nama Bahan</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border-2 border-[#D4AF37]/40 shadow-sm overflow-hidden">
-        <div className="bg-[#FFF8E1] border-b px-4 py-2 flex justify-between text-[11px]"><span className="font-bold">{isExistingBahan?`🔄 UPDATE: ${existingData?.nama_bahan}`:'✨ BARU - Kode Smart Wide Box'}</span><span className={isExistingBahan?'bg-blue-100 text-blue-700 px-3 py-1 rounded-full':'bg-green-100 text-green-700 px-3 py-1 rounded-full'}>{isExistingBahan?'UPDATE':'BARU'}</span></div>
+        <div className="bg-[#FFF8E1] border-b px-4 py-2 text-[11px] font-bold">✨ Input Bahan - Hierarki Dinamis (Gula Jawa sudah di BIN, Jagung pipil deleted)</div>
         <div className="divide-y divide-slate-200">
-          {/* KODE SMART */}
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">1. Kode Smart</div><div className="text-[11px] text-slate-500">Auto BHN-KAT-001</div></div><div className="px-5 py-3"><input className="w-full bg-slate-100 border-2 p-3.5 rounded-xl text-sm font-mono font-bold" value={kodePreview} readOnly /></div></div>
-          
-          {/* KATEGORI - DIPERLEBAR */}
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#FFF8E1] px-5 py-4 border-r"><div className="font-bold text-sm">2. Kategori * (9 Tetap LOCK)</div><div className="text-[11px] text-green-600 font-bold mt-1">Hanya 9! Kotak diperlebar!</div></div><div className="px-5 py-3"><select className="w-full border-2 border-[#D4AF37]/50 p-4 rounded-xl text-sm font-bold bg-white min-h-[52px]" value={form.kategori} onChange={e=>setForm({...form, kategori: e.target.value})} required>{kategoris.map(k=><option key={k.nama} value={k.nama}>{k.nama} ({kategoriKodeMap[k.nama]}) - {masterBahanJawa[k.nama]?.length||0} pilihan bahan</option>)}</select></div></div>
-          
-          {/* NAMA BAHAN - DIPERLEBAR + FILTER BY KATEGORI */}
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#FFF8E1] px-5 py-4 border-r"><div className="font-bold text-sm">3. Nama Bahan * (Dropdown per Kategori)</div><div className="text-[11px] text-blue-600 mt-1">Pilih {form.kategori} → {filteredNamaByKategori.length} pilihan<br/>Kotak diperlebar 450px!</div></div><div className="px-5 py-3">
-            <div className="flex gap-3">
-              <input list="namaBahanListWide" className="flex-1 border-2 border-[#D4AF37]/30 p-4 rounded-xl text-sm min-h-[52px]" placeholder={`Ketik bahan ${form.kategori} → cek duplikat 3 lapis`} value={form.nama_bahan} onChange={e=>{ setForm({...form, nama_bahan: e.target.value}); handleNamaBahanSelect(e.target.value)}} required />
-              {/* KOTAK PILIHAN DIPERLEBAR dari 130px ke 350px */}
-              <select className="border-2 border-[#D4AF37]/50 p-4 rounded-xl text-sm bg-yellow-50 font-bold min-w-[350px] max-w-[450px] min-h-[52px]" value="" onChange={e=>{ if(e.target.value){ setForm({...form, nama_bahan: e.target.value}); handleNamaBahanSelect(e.target.value) }}}>
-                <option value="">▼ Pilih {form.kategori} ({filteredNamaByKategori.length} pilihan) - Kotak Lebar</option>
-                {filteredNamaByKategori.map(n=><option key={n} value={n}>{n} - {form.kategori} ({kategoriKodeMap[form.kategori]})</option>)}
-              </select>
-            </div>
-            <datalist id="namaBahanListWide">{filteredNamaByKategori.map(n=><option key={n} value={n} />)}</datalist>
-            <div className="text-[11px] text-slate-500 mt-2 bg-slate-50 p-2 rounded-lg">Contoh: Pilih Kategori <b>Bahan Pokok</b> → dropdown hanya muncul: Beras putih, Beras merah, Beras ketan, Jagung manis, Tepung terigu, Gula pasir (20 pilihan), bukan 9 bahan semua! | Pilih <b>Bumbu Segar</b> → Bawang Merah, Bawang Putih, Cabe, Jahe (30 pilihan)</div>
-          </div></div>
-
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">4. Sub-Kategori</div></div><div className="px-5 py-3"><input className="w-full border-2 p-4 rounded-xl text-sm bg-yellow-50 min-h-[52px]" placeholder="Contoh: Karbohidrat, Ayam, Daun" value={form.sub_kategori} onChange={e=>setForm({...form, sub_kategori: e.target.value})} /></div></div>
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#FFF8E1] px-5 py-4 border-r"><div className="font-bold text-sm">5. Satuan *</div></div><div className="px-5 py-3"><select className="w-full border-2 p-4 rounded-xl text-sm min-h-[52px]" value={form.satuan} onChange={e=>setForm({...form, satuan: e.target.value})}><option>Kg</option><option>Ltr</option><option>Pcs</option><option>Buah</option><option>Ikat</option><option>Karung</option><option>Botol</option><option>Set</option></select></div></div>
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#FFF8E1] px-5 py-4 border-r"><div className="font-bold text-sm">6. Stock *</div></div><div className="px-5 py-3">{isExistingBahan?(<div className="flex gap-3 items-center"><span className="bg-slate-100 border-2 px-5 py-4 rounded-xl text-sm font-bold min-w-[100px] text-center">{existingData?.stok||0}</span><span className="font-bold">+</span><input type="number" className="flex-1 border-2 border-blue-400 p-4 rounded-xl text-sm min-h-[52px]" value={form.stok_tambahan} onChange={e=>setForm({...form, stok_tambahan: e.target.value})} /></div>):(<input type="number" className="w-full border-2 border-[#D4AF37]/30 p-4 rounded-xl text-sm min-h-[52px]" placeholder="Masukkan stock awal" value={form.stok_tambahan} onChange={e=>setForm({...form, stok_tambahan: e.target.value})} required />)}</div></div>
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">7. Stock Minimum</div></div><div className="px-5 py-3"><input type="number" className="w-full border-2 p-4 rounded-xl text-sm min-h-[52px]" value={form.stok_minimum} onChange={e=>setForm({...form, stok_minimum: e.target.value})} /></div></div>
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#FFF8E1] px-5 py-4 border-r"><div className="font-bold text-sm">8. Harga Baru *</div></div><div className="px-5 py-3"><input type="number" className="w-full border-2 border-[#D4AF37]/30 p-4 rounded-xl text-sm min-h-[52px]" placeholder="Harga per satuan" value={form.harga_baru} onChange={e=>setForm({...form, harga_baru: e.target.value})} required={!isExistingBahan} /></div></div>
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">9. Supplier Nama</div></div><div className="px-5 py-3"><input className="w-full border-2 p-4 rounded-xl text-sm bg-green-50 min-h-[52px]" placeholder="Nama supplier (kunci UPDATE kalau beda)" value={form.supplier_nama} onChange={e=>setForm({...form, supplier_nama: e.target.value})} /></div></div>
-          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">10. Supplier WA</div></div><div className="px-5 py-3"><input className="w-full border-2 p-4 rounded-xl text-sm bg-green-50 min-h-[52px]" placeholder="WA supplier" value={form.supplier_wa} onChange={e=>setForm({...form, supplier_wa: e.target.value})} /></div></div>
+          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">1. Kode Smart</div></div><div className="px-5 py-3"><input className="w-full bg-slate-100 border-2 p-3.5 rounded-xl text-sm font-mono font-bold" value={kodePreview} readOnly /></div></div>
+          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#FFF8E1] px-5 py-4 border-r"><div className="font-bold text-sm">2. Kategori * (9 LOCK)</div><div className="text-[10px] text-green-600 font-bold">Dinamis!</div></div><div className="px-5 py-3"><select className="w-full border-2 border-[#D4AF37]/50 p-4 rounded-xl text-sm font-bold bg-white min-h-[52px]" value={form.kategori} onChange={e=>setForm({...form, kategori: e.target.value, namaBahanKategori: '', sub_kategori: ''})} required>{kategoriList9.map(k=><option key={k} value={k}>{k} - {kategoriLabel[k]} ({Object.keys(masterHierarchy[k]||{}).length} Nama Bahan)</option>)}</select></div></div>
+          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#FFF8E1] px-5 py-4 border-r"><div className="font-bold text-sm">3. Nama Bahan/Kategori *</div><div className="text-[10px] text-blue-600">Beras, Jagung, Tepung → + / Delete dinamis!</div></div><div className="px-5 py-3"><select className="w-full border-2 border-[#D4AF37]/30 p-4 rounded-xl text-sm min-h-[52px] font-bold bg-yellow-50" value={form.namaBahanKategori} onChange={e=>handleNamaBahanKategoriSelect(e.target.value)} required><option value="">▼ Pilih Nama Bahan/Kategori di {form.kategori} ({filteredNamaBahanByKategori.length} pilihan)</option>{filteredNamaBahanByKategori.map(n=><option key={n} value={n}>{n} - {form.kategori} ({masterHierarchy[form.kategori][n]?.length||0} sub)</option>)}</select></div></div>
+          <div className="grid grid-cols-[280px_1fr]"><div className="bg-[#E3F2FD] px-5 py-4 border-r"><div className="font-bold text-sm">4. Sub Kategori *</div><div className="text-[10px] text-blue-700">ketan, merah, porang, putih → + / Delete dinamis!</div></div><div className="px-5 py-3"><select className="w-full border-2 border-blue-300 p-4 rounded-xl text-sm min-h-[52px] font-bold bg-blue-50" value={form.sub_kategori} onChange={e=>setForm({...form, sub_kategori: e.target.value})} required disabled={!form.namaBahanKategori}><option value="">{form.namaBahanKategori?`▼ Pilih Sub di ${form.namaBahanKategori} (${filteredSubByNamaBahan.length} pilihan) - bisa + / Delete di manager atas`:'Pilih Nama Bahan/Kategori dulu'}</option>{filteredSubByNamaBahan.map(s=><option key={s} value={s}>{s}</option>)}</select><div className="text-[10px] text-slate-500 mt-1">Contoh: POK → Beras → ketan/merah/porang/putih | SAY → Polong → Buncis/Kacang Panjang | BIN → Gula → Jawa/Merah/Pasir</div></div></div>
+          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">5. Satuan</div></div><div className="px-5 py-3"><select className="w-full border-2 p-4 rounded-xl text-sm min-h-[52px]" value={form.satuan} onChange={e=>setForm({...form, satuan: e.target.value})}><option>Kg</option><option>Ltr</option><option>Pcs</option><option>Buah</option><option>Ikat</option><option>Karung</option><option>Botol</option><option>Set</option></select></div></div>
+          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">6. Stock</div></div><div className="px-5 py-3"><input type="number" className="w-full border-2 p-4 rounded-xl text-sm min-h-[52px]" value={form.stok_tambahan} onChange={e=>setForm({...form, stok_tambahan: e.target.value})} required /></div></div>
+          <div className="grid grid-cols-[280px_1fr]"><div className="bg-slate-50 px-5 py-4 border-r"><div className="font-bold text-sm">7. Harga Baru</div></div><div className="px-5 py-3"><input type="number" className="w-full border-2 p-4 rounded-xl text-sm min-h-[52px]" value={form.harga_baru} onChange={e=>setForm({...form, harga_baru: e.target.value})} required /></div></div>
         </div>
-        <div className="p-5 bg-[#0A1931] flex gap-3"><button type="submit" className="flex-1 bg-[#D4AF37] text-[#0A1931] font-bold px-6 py-4 rounded-xl text-sm">{isExistingBahan?`🔄 Update +${form.stok_tambahan||0} (${form.kategori})`:'💾 Simpan Kode Smart Wide Box'}</button></div>
+        <div className="p-5 bg-[#0A1931]"><button type="submit" className="w-full bg-[#D4AF37] text-[#0A1931] font-bold px-6 py-4 rounded-xl text-sm">💾 Simpan Dinamis - {form.kategori} / {form.namaBahanKategori} / {form.sub_kategori}</button></div>
       </form>
 
-      {showDeleteCart && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-5">
-          <div className="font-bold text-sm text-red-700">🗑️ Keranjang Hapus ({selectedIds.size})</div>
-          <div className="text-[11px] mt-2">{selectedItems.map(it=>`${it.nama_bahan} (${it.kode_bahan})`).join(', ')}</div>
-          <div className="flex gap-3 mt-4">
-            <button onClick={handleDeleteSelected} className="bg-red-600 text-white px-6 py-3 rounded-xl text-xs font-bold">🗑️ Delete All ({selectedIds.size})</button>
-            <button onClick={()=>{setSelectedIds(new Set()); setShowDeleteCart(false)}} className="bg-slate-200 px-6 py-3 rounded-xl text-xs">Batal</button>
-          </div>
-        </div>
-      )}
-
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="bg-[#0A1931] text-white px-5 py-3">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <span className="text-sm font-bold">📋 Tabel {filteredItems.length}/{items.length} bahan - Wide Box - {debugMsg}</span>
-            <div className="flex gap-3">
-              <input type="text" placeholder="🔍 Search 200: nama / kode / supplier..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm text-black w-[320px] md:w-[400px] border-2" />
-              <select value={filterKategori} onChange={e=>setFilterKategori(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm text-black border-2 min-w-[200px]">
-                <option value="Semua">Semua Kategori (9)</option>
-                {kategoriList9.map(k=><option key={k} value={k}>{k} ({kategoriKodeMap[k]}) - {masterBahanJawa[k]?.length||0} bahan</option>)}
-              </select>
-            </div>
-          </div>
-        </div>
+        <div className="bg-[#0A1931] text-white px-5 py-3 text-sm font-bold">📋 Tabel {filteredItems.length}/{items.length} bahan</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-100"><tr><th className="p-3"><input type="checkbox" checked={paginatedItems.length>0 && paginatedItems.every(it=>selectedIds.has(it.id))} onChange={toggleSelectAllFiltered} /></th><th className="p-3 text-left">Kode Smart</th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Kategori</th><th className="p-3 text-left">Supplier</th><th className="p-3 text-center">Stock</th><th className="p-3 text-right">Harga</th></tr></thead>
-            <tbody>{paginatedItems.map(it=><tr key={it.id} className={`border-b ${selectedIds.has(it.id)?'bg-red-50':''}`}><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.has(it.id)} onChange={()=>toggleSelect(it.id)} /></td><td className="p-3 font-mono text-[12px] font-bold text-blue-700">{it.kode_bahan||'-'}</td><td className="p-3 font-bold">{it.nama_bahan||it.name}</td><td className="p-3">{it.kategori} <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-full">{kategoriKodeMap[it.kategori]||''}</span></td><td className="p-3 text-[12px]">{it.supplier_nama||'-'}</td><td className="p-3 text-center">{it.stok||0} {it.satuan}</td><td className="p-3 text-right">Rp {(it.harga_baru||0).toLocaleString('id-ID')}</td></tr>)}</tbody>
+            <thead className="bg-slate-100"><tr><th className="p-3">Kode</th><th className="p-3 text-left">Nama Lengkap</th><th className="p-3">Kategori</th><th className="p-3">Nama Bahan/Kategori</th><th className="p-3">Sub</th><th className="p-3">Stock</th></tr></thead>
+            <tbody>{paginatedItems.map(it=>{
+              const parts = (it.nama_bahan||'').split(' ')
+              const sub = it.sub_kategori||parts[parts.length-1]||'-'
+              const namaKat = parts.slice(0,-1).join(' ')||it.nama_bahan
+              return <tr key={it.id} className="border-b"><td className="p-3 font-mono text-[12px] font-bold text-blue-700">{it.kode_bahan}</td><td className="p-3 font-bold">{it.nama_bahan}</td><td className="p-3">{it.kategori}</td><td className="p-3 bg-yellow-50">{namaKat}</td><td className="p-3 bg-blue-50 font-bold text-blue-800">{sub}</td><td className="p-3 text-center">{it.stok}</td></tr>
+            })}</tbody>
           </table>
         </div>
       </div>
