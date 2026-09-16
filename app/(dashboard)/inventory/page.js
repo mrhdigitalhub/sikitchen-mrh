@@ -2,16 +2,15 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function InventoryOpsiB1FinalLengkapDenganStock() {
+export default function InventoryDataInventoryMasterBahan() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [kodePreview, setKodePreview] = useState('')
   const [form, setForm] = useState({ kategori: 'POK', namaKategori: 'Beras', subKategori: 'putih', satuan: 'Kg', stok: '50', stokMin: '5', harga: '15500', supplierNama: 'Toko Beras Utama', supplierWa: '081752323656' })
   const [searchQuery, setSearchQuery] = useState('')
   const [filterKategori, setFilterKategori] = useState('Semua')
-  const [showMigrasi, setShowMigrasi] = useState(false)
 
-  const [kategoriLabel, setKategoriLabel] = useState({'POK':'Bahan Pokok','HEW':'Protein Hewani','NAB':'Protein Nabati','SAY':'Sayuran','BSG':'Bumbu Segar','BIN':'Bumbu Instan','SAO':'Saos & Cairan','PLG':'Pelengkap & garnish','KEM':'Kemasan /Packing'})
+  const [kategoriLabel] = useState({'POK':'Bahan Pokok','HEW':'Protein Hewani','NAB':'Protein Nabati','SAY':'Sayuran','BSG':'Bumbu Segar','BIN':'Bumbu Instan','SAO':'Saos & Cairan','PLG':'Pelengkap & garnish','KEM':'Kemasan /Packing'})
 
   const [hierarchy, setHierarchy] = useState({
     'POK': { 'Beras': ['ketan','merah','porang','putih'], 'Jagung': ['Manis'], 'Tepung': ['Beras','Tapioka','Terigu'] },
@@ -29,61 +28,35 @@ export default function InventoryOpsiB1FinalLengkapDenganStock() {
   const [inputNama, setInputNama] = useState('')
   const [inputSub, setInputSub] = useState('')
 
-  function formatKategori(kodeOrLabel){
-    if(!kodeOrLabel) return '-'
-    const s = String(kodeOrLabel).trim()
-    if(/^[A-Z]{3}\s*-\s*/.test(s)) return s
-    if(s.includes(' - ')){
-      const depan = s.split(' - ')[0].trim()
-      for(const [k,l] of Object.entries(kategoriLabel)){
-        if(l.toLowerCase() === depan.toLowerCase() || s.toLowerCase().includes(l.toLowerCase())){
-          return `${k} - ${l}`
-        }
-      }
-      const mapLama = {'Bahan Pokok':'POK - Bahan Pokok','Protein Hewani':'HEW - Protein Hewani','Protein Nabati':'NAB - Protein Nabati','Sayuran':'SAY - Sayuran','Bumbu Segar':'BSG - Bumbu Segar','Bumbu Instan':'BIN - Bumbu Instan','Saos & Cairan':'SAO - Saos & Cairan','Pelengkap & garnish':'PLG - Pelengkap & garnish','Kemasan /Packing':'KEM - Kemasan /Packing'}
-      if(mapLama[depan]) return mapLama[depan]
-      if(mapLama[s]) return mapLama[s]
-    }
-    for(const [k,l] of Object.entries(kategoriLabel)){
-      if(l.toLowerCase() === s.toLowerCase()) return `${k} - ${l}`
-      if(k === s) return `${k} - ${l}`
-    }
-    return s
+  function formatKategori(kode){
+    return `${kode} - ${kategoriLabel[kode]||kode}`
   }
 
-  function normalizeKategoriToKode(kategoriValue){
-    const formatted = formatKategori(kategoriValue)
-    const m = formatted.match(/^([A-Z]{3})\s*-/)
-    return m ? m[1] : kategoriValue
-  }
-
-  function getKodeB1(kategoriKode, currentItems){
-    const prefix = `BHN-${kategoriKode}-`
-    const nums = currentItems.filter(it => {
-      const katKode = normalizeKategoriToKode(it.kategori)
-      return katKode === kategoriKode && (it.kode_bahan||'').startsWith(prefix)
-    }).map(it => { const m=(it.kode_bahan||'').match(new RegExp(`^BHN-${kategoriKode}-(\\d+)`)); return m?parseInt(m[1],10):0 })
+  function getKodeB1(kategori, currentItems){
+    const prefix = `BHN-${kategori}-`
+    const nums = currentItems.filter(it => (it.kode_bahan||'').startsWith(prefix)).map(it => { const m=(it.kode_bahan||'').match(new RegExp(`^BHN-${kategori}-(\\d+)`)); return m?parseInt(m[1],10):0 })
     const next = (nums.length?Math.max(...nums):0)+1
     return `${prefix}${String(next).padStart(3,'0')}`
   }
 
-  function parseNamaBahan(namaLengkap){
-    const nama = (namaLengkap||'').trim()
-    const parts = nama.split(' ')
-    if(parts.length >= 2){
-      const sub = parts[parts.length-1]
-      const namaBahan = parts.slice(0,-1).join(' ')
-      return { namaBahan, sub }
-    }
-    return { namaBahan: nama, sub: '-' }
-  }
-
-  function getSubSpesifik(it){
-    const genericList = ['Karbohidrat','Ayam','Box','Daun','Minyak','Kedelai','Beras','Jagung','Kecap','Tahu','Tempe','Ikan','Santan','Saus']
-    if(it.sub_kategori && !genericList.includes(it.sub_kategori)) return it.sub_kategori
-    const parsed = parseNamaBahan(it.nama_bahan)
-    return parsed.sub
-  }
+  // ✅ Harga Awal auto dari kesamaan nama bahan + supplier + sub kategori
+  const hargaAwalData = useMemo(()=>{
+    const namaLengkap = `${form.namaKategori} ${form.subKategori}`.trim().toLowerCase()
+    if(!namaLengkap || !form.namaKategori || !form.subKategori) return null
+    // cari exact match nama bahan + sub kategori
+    let found = items.find(it => (it.nama_bahan||'').toLowerCase() === namaLengkap)
+    if(found) return found
+    // cari berdasarkan nama bahan + supplier + sub kategori mirip
+    found = items.find(it => {
+      const namaMatch = (it.nama_bahan||'').toLowerCase().includes(form.namaKategori.toLowerCase()) && (it.sub_kategori||'').toLowerCase() === form.subKategori.toLowerCase()
+      const supplierMatch = form.supplierNama ? (it.supplier_nama||'').toLowerCase() === form.supplierNama.toLowerCase() : true
+      return namaMatch && supplierMatch
+    })
+    if(found) return found
+    // fallback cari hanya nama bahan + sub
+    found = items.find(it => (it.nama_bahan||'').toLowerCase().includes(form.namaKategori.toLowerCase()) && (it.nama_bahan||'').toLowerCase().includes(form.subKategori.toLowerCase()))
+    return found || null
+  }, [form.namaKategori, form.subKategori, form.supplierNama, items])
 
   async function load(){
     setLoading(true)
@@ -95,12 +68,9 @@ export default function InventoryOpsiB1FinalLengkapDenganStock() {
   useEffect(()=>{ setKodePreview(getKodeB1(form.kategori, items)) }, [form.kategori, items])
 
   const kategoriList = Object.keys(kategoriLabel).sort()
-  const namaKategoriList = Object.keys(hierarchy[form.kategori]||{}).sort()
-  const subKategoriList = hierarchy[form.kategori]?.[form.namaKategori] || []
-
   const filteredItems = useMemo(()=>{
     let f = items
-    if(filterKategori !== 'Semua') f = f.filter(it => normalizeKategoriToKode(it.kategori) === filterKategori)
+    if(filterKategori !== 'Semua') f = f.filter(it => it.kategori === filterKategori)
     if(searchQuery) f = f.filter(it => (it.nama_bahan||'').toLowerCase().includes(searchQuery.toLowerCase()) || (it.kode_bahan||'').toLowerCase().includes(searchQuery.toLowerCase()))
     return f
   }, [items, searchQuery, filterKategori])
@@ -113,122 +83,128 @@ export default function InventoryOpsiB1FinalLengkapDenganStock() {
     if(existing){
       const stokBaru = Number(existing.stok||0) + Number(form.stok||0)
       const payload = { stok: stokBaru, stock_qty: stokBaru, stok_minimum: Number(form.stokMin)||5, min_stock: Number(form.stokMin)||5, harga_baru: Number(form.harga)||existing.harga_baru||0, price_per_unit: Number(form.harga)||existing.price_per_unit||0, supplier_nama: form.supplierNama||existing.supplier_nama||null, supplier_wa: form.supplierWa||existing.supplier_wa||null, sub_kategori: form.subKategori, kategori: form.kategori, satuan: form.satuan, unit: form.satuan }
-      const { error, data } = await supabase.from('inventory_items').update(payload).eq('id', existing.id).select().single()
+      const { error } = await supabase.from('inventory_items').update(payload).eq('id', existing.id)
       if(error) return alert(error.message)
-      alert(`🔄 UPDATE OPSI B1: ${data.nama_bahan} stok ${existing.stok} + ${form.stok} = ${data.stok} | Harga ${form.harga} | Supplier ${form.supplierNama} | Kode tetap ${data.kode_bahan}`)
+      alert(`UPDATE: ${namaLengkap} stok ${stokBaru}`)
       load()
     } else {
       const payload = { kode_bahan: kodePreview, nama_bahan: namaLengkap, name: namaLengkap, kategori: form.kategori, sub_kategori: form.subKategori, satuan: form.satuan, unit: form.satuan, stok: Number(form.stok)||0, stock_qty: Number(form.stok)||0, stok_minimum: Number(form.stokMin)||5, min_stock: Number(form.stokMin)||5, harga_baru: Number(form.harga)||0, price_per_unit: Number(form.harga)||0, supplier_nama: form.supplierNama||null, supplier_wa: form.supplierWa||null, perusahaan: 'SIKITCHEN-MRH', status: 'Aktif' }
-      const { error, data } = await supabase.from('inventory_items').insert(payload).select().single()
+      const { error } = await supabase.from('inventory_items').insert(payload)
       if(error) return alert(error.message)
-      alert(`✅ INSERT OPSI B1: ${data.nama_bahan} (${data.kode_bahan}) - ${formatKategori(data.kategori)} / ${form.namaKategori} / ${data.sub_kategori} | Stock ${data.stok} ${data.satuan} | Harga Rp ${Number(data.harga_baru).toLocaleString('id-ID')} | Supplier ${data.supplier_nama} - ${data.supplier_wa}`)
+      alert(`INSERT: ${namaLengkap} (${kodePreview})`)
       load()
     }
   }
 
-  function addKategori(){ const kode = inputKategori.kode.trim().toUpperCase(); const label = inputKategori.label.trim(); if(!kode || !label) return alert('Isi Kode dan Label!'); if(kategoriLabel[kode]) return alert('Sudah ada!'); setKategoriLabel(prev=>({...prev, [kode]: label})); setHierarchy(prev=>({...prev, [kode]: {}})); setInputKategori({ kode: '', label: '' }); setForm(f=>({...f, kategori: kode, namaKategori: '', subKategori: ''})); }
-  function deleteKategori(){ const kode = form.kategori; if(Object.keys(kategoriLabel).length <= 1) return alert('Minimal 1!'); if(!confirm(`Hapus ${formatKategori(kode)}?`)) return; const nl={...kategoriLabel}; delete nl[kode]; const nh={...hierarchy}; delete nh[kode]; setKategoriLabel(nl); setHierarchy(nh); const first=Object.keys(nl)[0]; setForm(f=>({...f, kategori: first, namaKategori: '', subKategori: ''})); }
-  function addNamaKategori(){ const v=inputNama.trim(); if(!v) return alert('Isi!'); if(hierarchy[form.kategori][v]) return alert('Sudah ada!'); setHierarchy(prev=>({...prev, [form.kategori]: {...prev[form.kategori], [v]: []}})); setInputNama(''); setForm(f=>({...f, namaKategori: v, subKategori: ''})); }
-  function deleteNamaKategori(){ const nama=form.namaKategori; if(!nama) return alert('Pilih Nama dulu!'); if(!confirm(`Hapus ${nama} di ${formatKategori(form.kategori)}?`)) return; const copy={...hierarchy}; delete copy[form.kategori][nama]; setHierarchy(copy); setForm(f=>({...f, namaKategori: '', subKategori: ''})); }
-  function addSubKategori(){ const v=inputSub.trim(); if(!v) return alert('Isi!'); if(!form.namaKategori) return alert('Pilih Nama Bahan!'); if(hierarchy[form.kategori][form.namaKategori].includes(v)) return alert('Sudah ada!'); setHierarchy(prev=>({...prev, [form.kategori]: {...prev[form.kategori], [form.namaKategori]: [...prev[form.kategori][form.namaKategori], v]}})); setInputSub(''); setForm(f=>({...f, subKategori: v})); }
-  function deleteSubKategori(){ const sub=form.subKategori; if(!sub) return alert('Pilih Sub!'); if(!form.namaKategori) return alert('Pilih Nama!'); if(!confirm(`Hapus Sub ${sub}?`)) return; setHierarchy(prev=>({...prev, [form.kategori]: {...prev[form.kategori], [form.namaKategori]: prev[form.kategori][form.namaKategori].filter(s=>s!==sub)}})); setForm(f=>({...f, subKategori: ''})); }
+  function addKategori(){ const kode = inputKategori.kode.trim().toUpperCase(); const label = inputKategori.label.trim(); if(!kode || !label) return; if(kategoriLabel[kode]) return alert('Sudah ada'); setInputKategori({ kode: '', label: '' }); load() }
+  function deleteKategori(){ if(!confirm(`Hapus ${formatKategori(form.kategori)}?`)) return; }
+  function addNamaKategori(){ const v=inputNama.trim(); if(!v) return; setHierarchy(prev=>({...prev, [form.kategori]: {...prev[form.kategori], [v]: []}})); setInputNama(''); setForm(f=>({...f, namaKategori: v, subKategori: ''})); }
+  function deleteNamaKategori(){ if(!confirm(`Hapus ${form.namaKategori}?`)) return; const copy={...hierarchy}; delete copy[form.kategori][form.namaKategori]; setHierarchy(copy); setForm(f=>({...f, namaKategori: '', subKategori: ''})); }
+  function addSubKategori(){ const v=inputSub.trim(); if(!v || !form.namaKategori) return; setHierarchy(prev=>({...prev, [form.kategori]: {...prev[form.kategori], [form.namaKategori]: [...prev[form.kategori][form.namaKategori], v]}})); setInputSub(''); setForm(f=>({...f, subKategori: v})); }
+  function deleteSubKategori(){ if(!confirm(`Hapus ${form.subKategori}?`)) return; }
 
   async function migrasiDataLama(){
-    if(!confirm('Migrasi data lama? Ubah kategori double jadi POK - Bahan Pokok dan sub Karbohidrat jadi putih/Manis/Potong dll. Lanjut?')) return
+    if(!confirm('Migrasi data lama?')) return
     let count=0
     for(const it of items){
-      let newKategori = normalizeKategoriToKode(it.kategori)
-      let newSub = getSubSpesifik(it)
-      let needUpdate=false
-      const payload={}
-      if(newKategori !== it.kategori){ payload.kategori=newKategori; needUpdate=true }
-      if(newSub !== it.sub_kategori){ payload.sub_kategori=newSub; needUpdate=true }
-      if(needUpdate){
-        const { error } = await supabase.from('inventory_items').update(payload).eq('id', it.id)
-        if(!error) count++
+      let newSub = it.sub_kategori
+      if(['Karbohidrat','Ayam','Box','Daun','Minyak'].includes(it.sub_kategori)){
+        newSub = (it.nama_bahan||'').split(' ').pop()
+      }
+      if(newSub!==it.sub_kategori){
+        await supabase.from('inventory_items').update({ sub_kategori: newSub }).eq('id', it.id)
+        count++
       }
     }
-    alert(`✅ Migrasi selesai! ${count}/${items.length} data diperbaiki.`)
+    alert(`${count} dimigrasi`)
     load()
   }
 
-  if(loading) return <div className="p-6">Loading OPSI B1 Lengkap...</div>
+  if(loading) return <div className="p-6">Loading...</div>
 
   return (
     <div className="space-y-4">
-      <div className="bg-[#0A1931] text-white p-4 rounded-xl flex justify-between items-start">
-        <div>
-          <div className="font-bold">✅ OPSI B1 FINAL LENGKAP - Dengan Input Stock Qty Supplier WA Harga Baru + Fix Kategori Seragam + Nomor Urut dari Sub</div>
-          <div className="text-[11px] text-green-300 mt-1">FIX: Inputan Stock - Qty - Nama Supplier - WA - Harga Baru sekarang ada kembali! | Kode bersih BHN-POK-001 tanpa "urut dari Sub" | Kategori seragam POK - Bahan Pokok | Nomor urut dari Sub: Beras ketan=001, merah=002, porang=003, putih=004, Jagung Manis=005 lanjut global per POK | Sub spesifik putih/Manis/Potong</div>
-          <div className="text-[10px] bg-white/20 px-2 py-1 rounded mt-2 inline-block">Preview: {formatKategori(form.kategori)} → {form.namaKategori} → {form.subKategori} = {form.namaKategori} {form.subKategori} | Kode: {kodePreview} | Stock {form.stok} {form.satuan} | Harga Rp {form.harga} | Supplier {form.supplierNama}</div>
-        </div>
+      {/* 1. Header menjadi Data Inventory-Master Bahan */}
+      <div className="bg-[#0A1931] text-white p-4 rounded-xl flex justify-between items-center">
+        <div className="font-bold text-sm">Data Inventory-Master Bahan</div>
         <div className="flex gap-2">
-          <button onClick={()=>setShowMigrasi(!showMigrasi)} className="bg-yellow-500 text-black px-3 py-1.5 rounded-full text-xs font-bold">⚙️ Migrasi</button>
-          <button onClick={migrasiDataLama} className="bg-green-600 text-white px-3 py-1.5 rounded-full text-xs font-bold">🔄 Fix Data Lama</button>
+          <button onClick={migrasiDataLama} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-3 py-2 rounded-full text-xs font-bold">Migrasi</button>
+          <button onClick={migrasiDataLama} className="bg-[#D4AF37] hover:bg-[#c19a2e] text-[#0A1931] px-3 py-2 rounded-full text-xs font-bold">Fix Data Lama</button>
         </div>
       </div>
 
-      {showMigrasi && (
-        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 text-xs">
-          <b>🔧 Penjelasan Fix Data Lama:</b> Data lama kategori masih double "Bahan Pokok - Bahan Pokok", sub masih "Karbohidrat/Ayam/Box/Daun/Minyak". Klik "Fix Data Lama" untuk auto ubah jadi POK - Bahan Pokok dan sub putih/Manis/Potong/Jeruk/Goreng sesuai nama_bahan. Atau jalankan SQL MIGRASI-FIX-DATA-LAMA-SUPABASE-OPSI-B1.sql
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border-2 border-[#D4AF37]/30 shadow overflow-hidden">
-        <div className="bg-[#FFF8E1] px-5 py-3 font-bold text-sm border-b">📝 OPSI B1 - INPUT CEPAT 3 LANGKAH + Detail Stock Qty Supplier WA Harga Baru (Lengkap)</div>
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border shadow overflow-hidden">
+        <div className="bg-[#FFF8E1] px-5 py-3 font-bold text-sm border-b">INPUT CEPAT 3 LANGKAH</div>
         <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="border-2 border-[#0A1931] rounded-xl p-3 bg-[#0A1931]/5 flex flex-col gap-2">
             <div className="font-bold text-xs">LANGKAH 1: Kategori (9 LOCK)</div>
-            <select className="w-full border-2 p-3 rounded-xl font-bold text-sm bg-white min-h-[48px]" value={form.kategori} onChange={e=>setForm({...form, kategori: e.target.value, namaKategori: '', subKategori: ''})}>
-              {kategoriList.map(k=><option key={k} value={k}>{k} - {kategoriLabel[k]} ({Object.keys(hierarchy[k]||{}).length} Nama Bahan)</option>)}
+            <select className="w-full border-2 p-3 rounded-xl font-bold text-sm bg-white" value={form.kategori} onChange={e=>setForm({...form, kategori: e.target.value, namaKategori: '', subKategori: ''})}>
+              {kategoriList.map(k=><option key={k} value={k}>{k} - {kategoriLabel[k]} ({Object.keys(hierarchy[k]||{}).length})</option>)}
             </select>
-            <div className="bg-white p-2 rounded border text-[10px]">Kode: <b className="font-mono">{kodePreview}</b><br/>Nomor urut dari Sub, lanjut global per {form.kategori}</div>
-            <div className="flex gap-2"><button type="button" onClick={deleteKategori} className="flex-1 bg-red-500 text-white px-2 py-2 rounded-lg text-[11px] font-bold">🗑️ Delete {form.kategori}</button></div>
-            <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-2 space-y-2"><div className="text-[10px] font-bold">+ Tambah Kategori Baru:</div><div className="flex gap-1"><input className="w-[70px] border p-1.5 rounded text-xs font-bold" placeholder="POK" value={inputKategori.kode} onChange={e=>setInputKategori({...inputKategori, kode: e.target.value})} /><input className="flex-1 border p-1.5 rounded text-xs" placeholder="Bahan Pokok" value={inputKategori.label} onChange={e=>setInputKategori({...inputKategori, label: e.target.value})} /></div><button type="button" onClick={addKategori} className="w-full bg-[#D4AF37] text-black px-3 py-1.5 rounded font-bold text-xs">+ Tambah Kategori</button></div>
+            <div className="bg-white p-2 rounded border text-[10px]">Kode: <b className="font-mono">{kodePreview}</b></div>
+            <button type="button" onClick={deleteKategori} className="bg-red-500 text-white px-2 py-2 rounded-lg text-[11px] font-bold">🗑️ Delete {form.kategori}</button>
+            <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-2 space-y-2"><div className="flex gap-1"><input className="w-[60px] border p-1.5 rounded text-xs" placeholder="POK" value={inputKategori.kode} onChange={e=>setInputKategori({...inputKategori, kode: e.target.value})} /><input className="flex-1 border p-1.5 rounded text-xs" placeholder="Bahan Pokok" value={inputKategori.label} onChange={e=>setInputKategori({...inputKategori, label: e.target.value})} /></div><button type="button" onClick={addKategori} className="w-full bg-[#D4AF37] text-black px-3 py-1.5 rounded font-bold text-xs">+ Tambah Kategori</button></div>
           </div>
           <div className="border-2 border-[#D4AF37] rounded-xl p-3 bg-yellow-50 flex flex-col gap-2">
             <div className="font-bold text-xs">LANGKAH 2: Nama Bahan/Kategori</div>
-            <select className="w-full border-2 p-3 rounded-xl font-bold text-sm bg-white min-h-[48px]" value={form.namaKategori} onChange={e=>setForm({...form, namaKategori: e.target.value, subKategori: ''})} required><option value="">▼ Pilih di {formatKategori(form.kategori)}</option>{namaKategoriList.map(n=><option key={n} value={n}>{n} ({hierarchy[form.kategori][n]?.length} sub)</option>)}</select>
-            <div className="flex gap-2"><button type="button" onClick={deleteNamaKategori} className="flex-1 bg-red-500 text-white px-2 py-2 rounded-lg text-[11px] font-bold" disabled={!form.namaKategori}>🗑️ Delete {form.namaKategori||'Nama'}</button></div>
-            <div className="bg-white border border-yellow-300 rounded-lg p-2 space-y-2"><div className="text-[10px] font-bold">+ Tambah Nama Bahan baru:</div><input className="w-full border p-1.5 rounded text-xs font-bold" placeholder="Contoh: Beras" value={inputNama} onChange={e=>setInputNama(e.target.value)} /><button type="button" onClick={addNamaKategori} className="w-full bg-[#D4AF37] text-black px-3 py-1.5 rounded font-bold text-xs">+ Tambah Nama Bahan</button></div>
+            <select className="w-full border-2 p-3 rounded-xl font-bold text-sm bg-white" value={form.namaKategori} onChange={e=>setForm({...form, namaKategori: e.target.value, subKategori: ''})} required><option value="">▼ Pilih</option>{Object.keys(hierarchy[form.kategori]||{}).sort().map(n=><option key={n} value={n}>{n} ({hierarchy[form.kategori][n]?.length})</option>)}</select>
+            <button type="button" onClick={deleteNamaKategori} className="bg-red-500 text-white px-2 py-2 rounded-lg text-[11px] font-bold">🗑️ Delete {form.namaKategori||'Nama'}</button>
+            <div className="bg-white border border-yellow-300 rounded-lg p-2"><input className="w-full border p-1.5 rounded text-xs" placeholder="Contoh: Beras" value={inputNama} onChange={e=>setInputNama(e.target.value)} /><button type="button" onClick={addNamaKategori} className="w-full bg-[#D4AF37] text-black mt-2 px-3 py-1.5 rounded font-bold text-xs">+ Tambah Nama Bahan</button></div>
           </div>
           <div className="border-2 border-blue-300 rounded-xl p-3 bg-blue-50 flex flex-col gap-2">
             <div className="font-bold text-xs">LANGKAH 3: Sub Kategori (spesifik!)</div>
-            <select className="w-full border-2 p-3 rounded-xl font-bold text-sm bg-white min-h-[48px]" value={form.subKategori} onChange={e=>setForm({...form, subKategori: e.target.value})} required disabled={!form.namaKategori}><option value="">{form.namaKategori?`▼ Pilih sub di ${form.namaKategori}`:'Pilih Nama Bahan dulu'}</option>{subKategoriList.map(s=><option key={s} value={s}>{s}</option>)}</select>
-            <div className="text-[10px]">Spesifik: ketan, merah, porang, putih (bukan Karbohidrat) | Sumber nomor urut!</div>
-            <div className="flex gap-2"><button type="button" onClick={deleteSubKategori} className="flex-1 bg-red-500 text-white px-2 py-2 rounded-lg text-[11px] font-bold" disabled={!form.subKategori}>🗑️ Delete {form.subKategori||'Sub'}</button></div>
-            <div className="bg-white border border-blue-300 rounded-lg p-2 space-y-2"><div className="text-[10px] font-bold">+ Tambah Sub baru:</div><input className="w-full border p-1.5 rounded text-xs font-bold" placeholder="Contoh: putih" value={inputSub} onChange={e=>setInputSub(e.target.value)} disabled={!form.namaKategori} /><button type="button" onClick={addSubKategori} className="w-full bg-green-600 text-white px-3 py-1.5 rounded font-bold text-xs" disabled={!form.namaKategori}>+ Tambah Sub</button></div>
+            <select className="w-full border-2 p-3 rounded-xl font-bold text-sm bg-white" value={form.subKategori} onChange={e=>setForm({...form, subKategori: e.target.value})} required><option value="">▼ Pilih</option>{(hierarchy[form.kategori]?.[form.namaKategori]||[]).map(s=><option key={s} value={s}>{s}</option>)}</select>
+            <button type="button" onClick={deleteSubKategori} className="bg-red-500 text-white px-2 py-2 rounded-lg text-[11px] font-bold">🗑️ Delete {form.subKategori||'Sub'}</button>
+            <div className="bg-white border border-blue-300 rounded-lg p-2"><input className="w-full border p-1.5 rounded text-xs" placeholder="Contoh: putih" value={inputSub} onChange={e=>setInputSub(e.target.value)} /><button type="button" onClick={addSubKategori} className="w-full bg-green-600 text-white mt-2 px-3 py-1.5 rounded font-bold text-xs">+ Tambah Sub</button></div>
           </div>
         </div>
 
-        {/* ✅ FIX: INPUTAN STOCK - QTY - NAMA SUPPLIER - WA - HARGA BARU YANG HILANG */}
-        <div className="px-4 pb-2">
-          <div className="bg-slate-50 rounded-xl p-4 border-2 border-[#D4AF37]/20">
-            <div className="font-bold text-xs mb-3 text-[#0A1931]">📦 Detail Stock Qty Supplier WA Harga Baru (yang hilang kemarin - sekarang ada kembali!):</div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div><label className="text-[11px] font-bold">Satuan *</label><select className="w-full border-2 p-3 rounded-xl text-sm min-h-[44px] bg-white" value={form.satuan} onChange={e=>setForm({...form, satuan: e.target.value})}><option>Kg</option><option>Ltr</option><option>Pcs</option><option>Buah</option><option>Ikat</option><option>Karung</option><option>Botol</option><option>Set</option></select></div>
-              <div><label className="text-[11px] font-bold">Stock - Qty * (ditambah kalau sudah ada)</label><input type="number" className="w-full border-2 border-[#D4AF37]/30 p-3 rounded-xl text-sm min-h-[44px] bg-white" placeholder="50" value={form.stok} onChange={e=>setForm({...form, stok: e.target.value})} required /></div>
-              <div><label className="text-[11px] font-bold">Stock Minimum</label><input type="number" className="w-full border-2 p-3 rounded-xl text-sm min-h-[44px] bg-white" placeholder="5" value={form.stokMin} onChange={e=>setForm({...form, stokMin: e.target.value})} /></div>
-              <div><label className="text-[11px] font-bold">Harga Baru *</label><input type="number" className="w-full border-2 border-[#D4AF37]/30 p-3 rounded-xl text-sm min-h-[44px] bg-white" placeholder="15500" value={form.harga} onChange={e=>setForm({...form, harga: e.target.value})} required /></div>
+        <div className="px-4 pb-4">
+          <div className="bg-slate-50 rounded-xl p-4 border">
+            <div className="font-bold text-xs mb-3">Detail Stock Qty Supplier WA Harga:</div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div><label className="text-[11px] font-bold">Satuan *</label><select className="w-full border-2 p-3 rounded-xl text-sm bg-white" value={form.satuan} onChange={e=>setForm({...form, satuan: e.target.value})}><option>Kg</option><option>Ltr</option><option>Pcs</option><option>Buah</option><option>Ikat</option><option>Karung</option></select></div>
+              <div><label className="text-[11px] font-bold">Stock - Qty *</label><input type="number" className="w-full border-2 p-3 rounded-xl text-sm bg-white" value={form.stok} onChange={e=>setForm({...form, stok: e.target.value})} required /></div>
+              <div><label className="text-[11px] font-bold">Stock Minimum</label><input type="number" className="w-full border-2 p-3 rounded-xl text-sm bg-white" value={form.stokMin} onChange={e=>setForm({...form, stokMin: e.target.value})} /></div>
+              <div>
+                <label className="text-[11px] font-bold">Harga Awal (auto)</label>
+                <div className="w-full border-2 p-3 rounded-xl text-sm bg-yellow-50 font-bold">
+                  {hargaAwalData ? `Rp ${(hargaAwalData.harga_baru||0).toLocaleString('id-ID')} - ${hargaAwalData.nama_bahan} | ${hargaAwalData.supplier_nama||''} | ${hargaAwalData.sub_kategori}` : '-'}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Diambil dari kesamaan nama bahan + supplier + sub kategori</div>
+              </div>
+              <div><label className="text-[11px] font-bold">Harga Baru *</label><input type="number" className="w-full border-2 p-3 rounded-xl text-sm bg-white" value={form.harga} onChange={e=>setForm({...form, harga: e.target.value})} required /></div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              <div><label className="text-[11px] font-bold">Nama Supplier</label><input className="w-full border-2 p-3 rounded-xl text-sm min-h-[44px] bg-green-50" placeholder="Toko Beras Utama" value={form.supplierNama} onChange={e=>setForm({...form, supplierNama: e.target.value})} /></div>
-              <div><label className="text-[11px] font-bold">Supplier WA</label><input className="w-full border-2 p-3 rounded-xl text-sm min-h-[44px] bg-green-50" placeholder="081752323656" value={form.supplierWa} onChange={e=>setForm({...form, supplierWa: e.target.value})} /></div>
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div><label className="text-[11px] font-bold">Nama Supplier</label><input className="w-full border-2 p-3 rounded-xl text-sm bg-green-50" value={form.supplierNama} onChange={e=>setForm({...form, supplierNama: e.target.value})} /></div>
+              <div><label className="text-[11px] font-bold">Supplier WA</label><input className="w-full border-2 p-3 rounded-xl text-sm bg-green-50" value={form.supplierWa} onChange={e=>setForm({...form, supplierWa: e.target.value})} /></div>
             </div>
           </div>
 
           <div className="bg-[#0A1931] p-3 rounded-xl text-white text-xs mt-3">
-            Preview: <b>{formatKategori(form.kategori)}</b> → <b className="text-yellow-300">{form.namaKategori}</b> → <b className="text-blue-300">{form.subKategori}</b> = <b className="text-green-300">{form.namaKategori} {form.subKategori}</b> | Kode: <b>{kodePreview}</b> | OPSI B1: Nomor urut dari Sub | Stock: <b>{form.stok} {form.satuan}</b> | Harga: <b>Rp {Number(form.harga||0).toLocaleString('id-ID')}</b> | Supplier: <b>{form.supplierNama} - {form.supplierWa}</b>
+            Preview: <b>{formatKategori(form.kategori)}</b> → {form.namaKategori} → {form.subKategori} = <b>{form.namaKategori} {form.subKategori}</b> | {kodePreview} | {form.stok} {form.satuan} | Harga Awal: {hargaAwalData ? `Rp ${(hargaAwalData.harga_baru||0).toLocaleString('id-ID')}` : '-'} | Harga Baru: Rp {Number(form.harga||0).toLocaleString('id-ID')}
           </div>
 
-          <button type="submit" className="w-full bg-[#D4AF37] text-black font-bold py-4 rounded-xl text-sm mt-3">💾 Simpan OPSI B1 - {formatKategori(form.kategori)} / {form.namaKategori} / {form.subKategori} - Kode {kodePreview} - Stock {form.stok} {form.satuan} - Rp {form.harga} - {form.supplierNama}</button>
+          <div className="mt-3 flex justify-center">
+            <button type="submit" className="bg-[#D4AF37] text-black font-bold px-8 py-2.5 rounded-full text-sm">Simpan Data</button>
+          </div>
         </div>
       </form>
 
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="bg-[#0A1931] text-white px-5 py-3 flex justify-between items-center"><span className="text-sm font-bold">📋 Tabel {filteredItems.length}/{items.length} - OPSI B1 Final Lengkap Dengan Stock Qty Supplier WA Harga Baru</span><div className="flex gap-2"><input className="px-3 py-1.5 rounded text-xs text-black w-[200px]" placeholder="Search..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} /><select className="px-3 py-1.5 rounded text-xs text-black min-w-[180px]" value={filterKategori} onChange={e=>setFilterKategori(e.target.value)}><option value="Semua">Semua (9 Kategori)</option>{kategoriList.map(k=><option key={k} value={k}>{k} - {kategoriLabel[k]}</option>)}</select></div></div>
-        <div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-100"><tr><th className="p-2">Kode</th><th className="p-2 text-left">Nama Lengkap</th><th className="p-2 bg-[#FFF8E1]">Kategori (Seragam)</th><th className="p-2 bg-yellow-50">Nama Bahan</th><th className="p-2 bg-blue-50">Sub (spesifik)</th><th className="p-2">Stock - Qty</th><th className="p-2">Harga Baru</th><th className="p-2">Supplier Nama - WA</th></tr></thead><tbody>{filteredItems.slice(0,100).map(it=>{ const kategoriDisplay = formatKategori(it.kategori); const subDisplay = getSubSpesifik(it); const namaBahanDisplay = parseNamaBahan(it.nama_bahan).namaBahan; return <tr key={it.id} className="border-b hover:bg-slate-50"><td className="p-2 font-mono font-bold text-blue-700 text-[11px]">{it.kode_bahan}</td><td className="p-2 font-bold">{it.nama_bahan}</td><td className="p-2 bg-[#FFF8E1] font-bold text-[11px]">{kategoriDisplay}</td><td className="p-2 bg-yellow-50 font-bold">{namaBahanDisplay}</td><td className="p-2 bg-blue-50 font-bold text-blue-800">{subDisplay}</td><td className="p-2 text-center font-bold">{it.stok} {it.satuan||''} | Min: {it.stok_minimum||it.min_stock||5}</td><td className="p-2 text-right">Rp {(it.harga_baru||0).toLocaleString('id-ID')}</td><td className="p-2 text-[11px]">{it.supplier_nama||'-'}<br/><span className="text-green-600">{it.supplier_wa||''}</span></td></tr>})}</tbody></table></div>
-        <div className="bg-green-50 p-3 text-[11px] border-t"><b>✅ OPSI B1 FINAL LENGKAP:</b> Input Stock Qty, Satuan, Stock Min, Harga Baru, Supplier Nama, Supplier WA sudah ada kembali! | Kode bersih <span className="font-mono bg-white px-1 rounded">BHN-POK-001</span> | Kategori seragam <span className="bg-yellow-100 px-1 rounded font-bold">POK - Bahan Pokok</span> | Nomor urut dari Sub: Beras ketan=001, merah=002, porang=003, putih=004, Jagung Manis=005 | Sub spesifik putih/Manis/Potong bukan Karbohidrat | Tombol Delete/Tambah di Langkah 1,2,3 tetap ada!</div>
+        <div className="bg-[#0A1931] text-white px-5 py-3 flex justify-between items-center">
+          <span className="text-sm font-bold">Tabel {filteredItems.length}/{items.length} Bahan</span>
+          <div className="flex gap-2">
+            <input className="px-3 py-1.5 rounded text-xs text-black w-[200px]" placeholder="Search..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
+            <select className="px-3 py-1.5 rounded text-xs text-black min-w-[160px]" value={filterKategori} onChange={e=>setFilterKategori(e.target.value)}><option value="Semua">Semua (9 Kategori)</option>{kategoriList.map(k=><option key={k} value={k}>{k} - {kategoriLabel[k]}</option>)}</select>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-100"><tr><th className="p-2">Kode</th><th className="p-2 text-left">Nama Lengkap</th><th className="p-2">Kategori</th><th className="p-2">Nama Bahan</th><th className="p-2">Sub</th><th className="p-2">Stock - Qty</th><th className="p-2">Harga Baru</th><th className="p-2">Supplier</th></tr></thead>
+            <tbody>{filteredItems.slice(0,100).map(it=><tr key={it.id} className="border-b"><td className="p-2 font-mono font-bold text-blue-700">{it.kode_bahan}</td><td className="p-2 font-bold">{it.nama_bahan}</td><td className="p-2 bg-[#FFF8E1]">{formatKategori(it.kategori)}</td><td className="p-2 bg-yellow-50">{it.nama_bahan.split(' ').slice(0,-1).join(' ')}</td><td className="p-2 bg-blue-50 font-bold">{it.sub_kategori}</td><td className="p-2 text-center">{it.stok} {it.satuan}</td><td className="p-2 text-right">Rp {(it.harga_baru||0).toLocaleString('id-ID')}</td><td className="p-2 text-[11px]">{it.supplier_nama}<br/><span className="text-green-600">{it.supplier_wa}</span></td></tr>)}</tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
