@@ -95,8 +95,9 @@ export default function KalkulatorOrderFixButton() {
       menus: { name: selectedMenu.name }
     }
 
-    // Coba simpan ke Supabase dulu
+    // Coba simpan ke Supabase dulu - dengan debug error
     try {
+      console.log('Coba insert orders:', { menu_id: selectedMenuId, jumlah_porsi: Number(jumlahPorsi) })
       const { data, error } = await supabase.from('orders').insert({
         menu_id: selectedMenuId,
         jumlah_porsi: Number(jumlahPorsi),
@@ -108,7 +109,11 @@ export default function KalkulatorOrderFixButton() {
         status: 'Draft'
       }).select('*, menus(name)').single()
       
-      if(!error && data){
+      if(error){
+        console.error('Supabase insert error:', error)
+        throw error
+      }
+      if(data){
         setOrderSukses({
           menu: selectedMenu.name,
           porsi: jumlahPorsi,
@@ -121,12 +126,15 @@ export default function KalkulatorOrderFixButton() {
           info: `✅ Order tersimpan di Supabase! ID ${data.id.slice(0,8)} - History tidak hilang!`,
           needSQL: false
         })
+        // Hapus lokal kalau Supabase berhasil
+        localStorage.removeItem('sikitchen_orders')
         loadAll()
         return
       }
-      // Jika error karena tabel belum ada, simpan ke localStorage biar tombol tetap berfungsi
-      throw error
+      throw new Error('Data null tanpa error')
     } catch (err) {
+      console.error('Gagal Supabase, fallback lokal:', err)
+      const supaError = err?.message || err?.details || JSON.stringify(err)
       // Fallback localStorage - TOMBOL TETAP BERFUNGSI walau tabel orders belum ada
       try {
         const existing = JSON.parse(localStorage.getItem('sikitchen_orders')||'[]')
@@ -142,9 +150,10 @@ export default function KalkulatorOrderFixButton() {
           totalJual: kalkulasi.totalJual,
           totalProfit: kalkulasi.totalProfit,
           persen: kalkulasi.persenProfit,
-          info: `✅ Kalkulasi berhasil! Daging rendang 10 porsi - Customer Ibu mimin - TERSIMPAN LOKAL!`,
+          info: `✅ Kalkulasi berhasil! Daging rendang 10 porsi - Customer Ibu mimin - TERSIMPAN LOKAL! Error: ${supaError.slice(0,120)}`,
           needSQL: true,
-          isLocal: true
+          isLocal: true,
+          supaError: supaError
         })
       } catch (e) {
         setOrderSukses({
@@ -179,7 +188,7 @@ export default function KalkulatorOrderFixButton() {
               <div className="font-bold text-green-800" style={{fontSize:'15px'}}>{orderSukses.info}</div>
               <div style={{fontSize:'13px'}} className="mt-1">Menu: <b>{orderSukses.menu}</b> - {orderSukses.porsi} porsi - Customer: <b>{orderSukses.customer}</b> - {orderSukses.tanggal}</div>
               <div style={{fontSize:'13px'}}>HPP: <b>Rp {orderSukses.totalHPP.toLocaleString('id-ID')}</b> | Jual: <b>Rp {orderSukses.totalJual.toLocaleString('id-ID')}</b> | Profit: <b>Rp {orderSukses.totalProfit.toLocaleString('id-ID')} ({orderSukses.persen}%)</b></div>
-              {orderSukses.isLocal && <div className="mt-2 text-[12px] bg-yellow-100 border border-yellow-300 p-2 rounded">⚠️ Tersimpan lokal (browser) karena tabel orders di Supabase belum ada. Klik SQL Fix di bawah & jalankan SQL di Supabase biar tersimpan permanen & bisa masuk Produksi!</div>}
+          {orderSukses.isLocal && <div className="mt-2 text-[12px] bg-yellow-100 border border-yellow-300 p-2 rounded">⚠️ Tersimpan lokal (browser) karena tabel orders di Supabase belum ada. Klik SQL Fix di bawah & jalankan SQL di Supabase biar tersimpan permanen & bisa masuk Produksi! {orderSukses.supaError && <div className="mt-1 font-mono bg-white p-1 rounded border text-[11px] text-red-700">Error Supabase: {orderSukses.supaError}</div>}</div>}
             </div>
           )}
           <button onClick={()=>setOrderSukses(null)} className="mt-2 bg-white border px-3 py-1 rounded-full font-bold" style={{fontSize:'12px'}}>Tutup</button>
