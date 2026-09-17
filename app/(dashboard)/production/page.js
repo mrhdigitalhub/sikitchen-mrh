@@ -2,28 +2,46 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
+function formatQty(qty, satuan){
+  if(satuan===undefined || satuan===null) satuan='Kg'
+  const s = String(satuan).toLowerCase()
+  if(s.includes('kg')){
+    if(qty < 0.001) return `${qty} Kg`
+    if(qty < 1) return `${(qty*1000).toFixed(0)} gram`
+    if(Number.isInteger(qty)) return `${qty} Kg`
+    return `${qty.toFixed(2).replace(/\.00$/,'')} Kg (${(qty*1000).toFixed(0)} gram)`
+  }
+  if(s.includes('ltr') || s.includes('liter') || s === 'l'){
+    if(qty < 1) return `${(qty*1000).toFixed(0)} ml`
+    return `${qty.toFixed(3).replace(/\.?0+$/,'')} Ltr (${(qty*1000).toFixed(0)} ml)`
+  }
+  if(s.includes('pcs') || s.includes('buah') || s.includes('box')){
+    return `${Math.round(qty)} Pcs`
+  }
+  return `${qty} ${satuan}`
+}
+
 export default function ProduksiTahap5() {
   const [items, setItems] = useState([])
-  const [menus, setMenus] = useState([])
   const [recipes, setRecipes] = useState([])
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedOrderId, setSelectedOrderId] = useState('')
   const [statusFilter, setStatusFilter] = useState('Semua')
+  const [checkedItems, setCheckedItems] = useState({})
 
   async function loadAll(){
     setLoading(true)
     const { data: inv } = await supabase.from('inventory_items').select('*').order('kode_bahan').limit(500)
-    const { data: m } = await supabase.from('menus').select('*').limit(100)
     const { data: rec } = await supabase.from('recipes').select('*, inventory_items(kode_bahan,nama_bahan,satuan,sub_kategori,harga_baru,stok), menus(name)').limit(1000)
     const { data: ord } = await supabase.from('orders').select('*, menus(name,harga_jual_per_porsi)').order('created_at', { ascending: false }).limit(100)
     if(inv) setItems(inv)
-    if(m) setMenus(m)
     if(rec) setRecipes(rec)
     if(ord) setOrders(ord)
     setLoading(false)
   }
   useEffect(()=>{ loadAll() }, [])
+  useEffect(()=>{ setCheckedItems({}) }, [selectedOrderId])
 
   const filteredOrders = useMemo(()=>{
     if(statusFilter==='Semua') return orders
@@ -49,167 +67,154 @@ export default function ProduksiTahap5() {
         qtyPerPorsi,
         totalQty,
         stok,
+        sisa: stok - totalQty,
         cukup: stok >= totalQty,
         kekurangan: Math.max(0, totalQty - stok),
         biaya: harga * totalQty
       })
     }
-    const allCukup = kebutuhan.every(k=>k.cukup)
-    return { recs, kebutuhan, allCukup, totalHPP }
+    return { kebutuhan, allCukup: kebutuhan.every(k=>k.cukup), totalHPP }
   }, [selectedOrder, recipes])
 
   async function updateStatus(newStatus){
     if(!selectedOrder) return
-    if(newStatus==='Produksi'){
-      if(produksiDetail && !produksiDetail.allCukup){
-        if(!confirm('Stok tidak cukup! Tetap mulai produksi? Stock akan minus!')) return
-      }
-      // Potong stok inventory_items
-      if(produksiDetail){
-        for(const k of produksiDetail.kebutuhan){
-          const invId = k.inventory_item_id
-          const newStok = Number(k.stok) - Number(k.totalQty)
-          const { error } = await supabase.from('inventory_items').update({ stok: newStok, stock_qty: newStok }).eq('id', invId)
-          if(error) console.log('Error potong stok', k.inventory_items?.kode_bahan, error.message)
-        }
+    if(newStatus==='Produksi' && produksiDetail && !produksiDetail.allCukup){
+      if(!confirm('Stok tidak cukup! Tetap mulai produksi?')) return
+    }
+    if(newStatus==='Produksi' && produksiDetail){
+      for(const k of produksiDetail.kebutuhan){
+        const newStok = Number(k.stok) - Number(k.totalQty)
+        await supabase.from('inventory_items').update({ stok: newStok, stock_qty: newStok }).eq('id', k.inventory_item_id)
       }
     }
     const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', selectedOrder.id)
     if(error) return alert(error.message)
-    alert(`✅ Order ${selectedOrder.menus?.name} ${selectedOrder.jumlah_porsi} porsi - ${selectedOrder.customer_name} status ${selectedOrder.status} → ${newStatus}${newStatus==='Produksi'?' - Stok dipotong!':''}`)
+    alert(`✅ ${selectedOrder.menus?.name} ${selectedOrder.jumlah_porsi} porsi → ${newStatus}`)
     loadAll()
   }
 
   async function batalProduksi(){
-    if(!selectedOrder) return
-    if(selectedOrder.status!=='Produksi') return alert('Hanya order status Produksi yang bisa dibatalkan & stok dikembalikan')
-    if(!confirm(`Batalkan produksi ${selectedOrder.menus?.name} ${selectedOrder.jumlah_porsi} porsi? Stok akan dikembalikan!`)) return
+    if(!selectedOrder || selectedOrder.status!=='Produksi') return
+    if(!confirm('Batalkan produksi & kembalikan stok?')) return
     if(produksiDetail){
       for(const k of produksiDetail.kebutuhan){
-        const invId = k.inventory_item_id
         const newStok = Number(k.stok) + Number(k.totalQty)
-        await supabase.from('inventory_items').update({ stok: newStok, stock_qty: newStok }).eq('id', invId)
+        await supabase.from('inventory_items').update({ stok: newStok, stock_qty: newStok }).eq('id', k.inventory_item_id)
       }
     }
     await supabase.from('orders').update({ status: 'Draft' }).eq('id', selectedOrder.id)
-    alert('✅ Produksi dibatalkan, stok dikembalikan, status → Draft')
+    alert('✅ Dibatalkan, stok kembali')
     loadAll()
   }
 
-  if(loading) return <div className="p-6" style={{fontFamily:'Arial, sans-serif', fontSize:'16px'}}>Loading Produksi Tahap 5...</div>
+  if(loading) return <div className="p-6">Loading Produksi...</div>
 
   return (
     <div className="space-y-4" style={{fontFamily:'Arial, sans-serif'}}>
-      <div className="bg-white p-4 rounded-xl border flex justify-between items-start">
+      <div className="bg-white p-4 rounded-xl border flex justify-between">
         <div>
-          <div className="font-bold" style={{fontSize:'20px'}}>Produksi - Tahap 5</div>
-          <div className="text-slate-500 mt-1" style={{fontSize:'14px'}}>Ambil Order dari Kalkulator Order • Mulai Produksi = Potong Stok {items.length} bahan • Selesai = Siap Delivery • Arial +2px</div>
+          <div className="font-bold text-[20px]">Produksi - Tahap 5 (Layout Baru)</div>
+          <div className="text-slate-500 text-[13px]">No Urut + Satuan Umum + Checklist Sinkron + Tombol di Bawah + Ide 30 Menu</div>
         </div>
-        <div className="bg-[#0A1931] text-white px-3 py-1.5 rounded-full font-bold" style={{fontSize:'13px'}}>{orders.length} Order • {filteredOrders.filter(o=>o.status==='Draft').length} Draft • {filteredOrders.filter(o=>o.status==='Produksi').length} Produksi • {filteredOrders.filter(o=>o.status==='Selesai').length} Selesai</div>
+        <div className="bg-[#0A1931] text-white px-3 py-1.5 rounded-full font-bold text-[13px]">{orders.length} Order • {filteredOrders.filter(o=>o.status==='Draft').length} Draft</div>
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
-        <div className="md:col-span-1 bg-white rounded-xl border shadow-sm overflow-hidden">
-          <div className="bg-[#0A1931] text-white px-4 py-3 flex justify-between items-center">
-            <span className="font-bold" style={{fontSize:'14px'}}>Daftar Order ({filteredOrders.length}/{orders.length})</span>
+        <div className="md:col-span-1 bg-white rounded-xl border overflow-hidden">
+          <div className="bg-[#0A1931] text-white px-4 py-3 flex justify-between">
+            <span className="font-bold text-[14px]">Daftar Order ({filteredOrders.length})</span>
             <select className="text-black px-2 py-1 rounded text-[12px]" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-              <option value="Semua">Semua</option><option value="Draft">Draft</option><option value="Produksi">Produksi</option><option value="Selesai">Selesai</option>
+              <option>Semua</option><option>Draft</option><option>Produksi</option><option>Selesai</option>
             </select>
           </div>
-          <div className="max-h-[600px] overflow-y-auto">
-            {filteredOrders.length===0 ? <div className="p-4 text-slate-500" style={{fontSize:'13px'}}>Belum ada order. Buat dulu di Kalkulator Order - Daging rendang 10 porsi Ibu mimin 18/09/2026</div> :
-            filteredOrders.map(o=>{
-              const isSelected = selectedOrderId===o.id
-              return (
-                <div key={o.id} onClick={()=>setSelectedOrderId(o.id)} className={`p-3 border-b cursor-pointer hover:bg-slate-50 ${isSelected?'bg-[#FFF8E1] border-l-4 border-l-[#D4AF37]':''}`}>
-                  <div className="font-bold" style={{fontSize:'14px'}}>{o.menus?.name||'Menu'} - {o.jumlah_porsi} porsi</div>
-                  <div style={{fontSize:'12px'}} className="text-slate-600">{o.customer_name} - {o.tanggal_order||o.created_at?.slice(0,10)} - {o.id.slice(0,8)}</div>
-                  <div className="flex gap-2 mt-1">
-                    <span className={`px-2 py-0.5 rounded-full font-bold text-white ${o.status==='Draft'?'bg-slate-500':o.status==='Produksi'?'bg-blue-600':'bg-green-600'}`} style={{fontSize:'11px'}}>{o.status}</span>
-                    <span style={{fontSize:'11px'}}>HPP Rp {Number(o.total_hpp||0).toLocaleString('id-ID')} | Jual Rp {Number(o.total_jual||0).toLocaleString('id-ID')}</span>
-                  </div>
-                </div>
-              )
-            })}
+          <div className="max-h-[700px] overflow-y-auto">
+            {filteredOrders.map(o=>(
+              <div key={o.id} onClick={()=>setSelectedOrderId(o.id)} className={`p-3 border-b cursor-pointer ${selectedOrderId===o.id?'bg-[#FFF8E1] border-l-4 border-l-[#D4AF37]':''}`}>
+                <div className="font-bold text-[14px]">{o.menus?.name} - {o.jumlah_porsi} porsi</div>
+                <div className="text-[12px] text-slate-600">{o.customer_name} - {o.tanggal_order} - {o.id.slice(0,8)}</div>
+                <div className="text-[11px]">{o.status} | HPP Rp {Number(o.total_hpp||0).toLocaleString('id-ID')}</div>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="md:col-span-2 space-y-4">
-          {!selectedOrder ? (
-            <div className="bg-white p-8 rounded-xl border text-center">
-              <div className="font-bold" style={{fontSize:'16px'}}>Pilih Order di kiri untuk mulai Produksi</div>
-              <div className="text-slate-500 mt-2" style={{fontSize:'13px'}}>Contoh: Daging rendang 10 porsi Ibu mimin 18/09/2026 - Draft → Produksi (potong stok BHN-POK-001 Beras 1 Kg, BHN-HEW-003 Daging 0.8 Kg, BHN-SAO-002 Minyak 0.15 Ltr) → Selesai → Delivery</div>
-            </div>
-          ) : (
+          {!selectedOrder ? <div className="bg-white p-8 rounded-xl border text-center">Pilih Order di kiri</div> : (
             <>
-              <div className="bg-white p-5 rounded-xl border shadow-sm">
-                <div className="font-bold" style={{fontSize:'16px'}}>{selectedOrder.menus?.name} - {selectedOrder.jumlah_porsi} porsi - {selectedOrder.customer_name}</div>
-                <div style={{fontSize:'13px'}} className="text-slate-600 mt-1">{selectedOrder.tanggal_order} - ID {selectedOrder.id.slice(0,8)} - HPP Rp {Number(selectedOrder.total_hpp||0).toLocaleString('id-ID')} - Jual Rp {Number(selectedOrder.total_jual||0).toLocaleString('id-ID')} - Profit Rp {Number(selectedOrder.total_profit||0).toLocaleString('id-ID')}</div>
-                <div className="mt-3 flex gap-2">
-                  <span className={`px-3 py-1 rounded-full font-bold text-white ${selectedOrder.status==='Draft'?'bg-slate-500':selectedOrder.status==='Produksi'?'bg-blue-600':'bg-green-600'}`} style={{fontSize:'13px'}}>Status: {selectedOrder.status}</span>
-                  {selectedOrder.status==='Draft' && <button onClick={()=>updateStatus('Produksi')} className="bg-blue-600 text-white px-5 py-2 rounded-full font-bold" style={{fontSize:'13px'}}>🔥 Mulai Produksi - Potong Stok {produksiDetail?.kebutuhan.length} bahan</button>}
-                  {selectedOrder.status==='Produksi' && (
-                    <>
-                      <button onClick={()=>updateStatus('Selesai')} className="bg-green-600 text-white px-5 py-2 rounded-full font-bold" style={{fontSize:'13px'}}>✅ Selesai Produksi - Siap Delivery</button>
-                      <button onClick={batalProduksi} className="bg-red-100 text-red-700 border border-red-200 px-4 py-2 rounded-full font-bold" style={{fontSize:'13px'}}>↩️ Batal & Kembalikan Stok</button>
-                    </>
-                  )}
-                  {selectedOrder.status==='Selesai' && <span className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-full font-bold" style={{fontSize:'13px'}}>✅ Siap Delivery - Lihat di Delivery</span>}
-                </div>
+              <div className="bg-white p-5 rounded-xl border">
+                <div className="font-bold text-[16px]">{selectedOrder.menus?.name} - {selectedOrder.jumlah_porsi} porsi - {selectedOrder.customer_name}</div>
+                <div className="text-[13px] text-slate-600">{selectedOrder.tanggal_order} - ID {selectedOrder.id.slice(0,8)} - HPP Rp {Number(selectedOrder.total_hpp||0).toLocaleString('id-ID')}</div>
+                <div className="mt-2"><span className="px-3 py-1 rounded-full bg-slate-500 text-white text-[13px]">Status: {selectedOrder.status}</span></div>
               </div>
 
               {produksiDetail && (
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                  <div className="bg-[#0A1931] text-white px-5 py-3 flex justify-between items-center">
-                    <span className="font-bold" style={{fontSize:'15px'}}>Kebutuhan Produksi: {selectedOrder.menus?.name} - {selectedOrder.jumlah_porsi} porsi - {produksiDetail.kebutuhan.length} bahan</span>
-                    <span className={`px-3 py-1 rounded-full font-bold ${produksiDetail.allCukup?'bg-green-500':'bg-red-500'}`} style={{fontSize:'12px'}}>{produksiDetail.allCukup?'✅ Stok Cukup':'⚠️ Stok Kurang'}</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full" style={{fontSize:'13px'}}>
-                      <thead className="bg-slate-100"><tr><th className="p-2 text-left">Kode - Bahan - Sub</th><th className="p-2">Qty/Porsi</th><th className="p-2">Total Butuh</th><th className="p-2">Stok Sekarang</th><th className="p-2">Sisa Setelah Potong</th><th className="p-2">Status</th></tr></thead>
-                      <tbody>
-                        {produksiDetail.kebutuhan.map(k=>{
-                          const inv = k.inventory_items
-                          const sisa = k.stok - k.totalQty
-                          return (
-                            <tr key={k.id} className={`border-b ${k.cukup?'':'bg-red-50'}`}>
-                              <td className="p-2"><b className="font-mono text-blue-700">{inv?.kode_bahan}</b> {inv?.nama_bahan} <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold" style={{fontSize:'11px'}}>{inv?.sub_kategori||'-'}</span> <span className="bg-slate-100 px-1.5 py-0.5 rounded" style={{fontSize:'11px'}}>{inv?.satuan||'Kg'}</span></td>
-                              <td className="p-2 text-center">{k.qtyPerPorsi} {inv?.satuan||'Kg'}</td>
-                              <td className="p-2 text-center font-bold bg-yellow-50">{k.totalQty.toFixed(3)} {inv?.satuan||'Kg'}</td>
-                              <td className="p-2 text-center">{k.stok} {inv?.satuan||'Kg'}</td>
-                              <td className="p-2 text-center font-bold"><span className={sisa>=0?'text-green-700':'text-red-700'}>{sisa.toFixed(3)} {inv?.satuan||'Kg'}</span></td>
-                              <td className="p-2 text-center"><span className={`px-2 py-1 rounded-full font-bold text-white ${k.cukup?'bg-green-600':'bg-red-600'}`} style={{fontSize:'11px'}}>{k.cukup?'✅ Cukup':'❌ Kurang'}</span></td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      <tfoot className="bg-[#FFF8E1] font-bold"><tr><td colSpan={5} className="p-2 text-right" style={{fontSize:'14px'}}>Total HPP Produksi {selectedOrder.jumlah_porsi} porsi:</td><td colSpan={1} className="p-2 text-right" style={{fontSize:'15px'}}>Rp {produksiDetail.totalHPP.toLocaleString('id-ID')}</td></tr></tfoot>
-                    </table>
-                  </div>
-                  <div className="p-3 bg-slate-50 text-slate-600" style={{fontSize:'12px'}}>
-                    Produksi: Saat klik Mulai Produksi → stok Data Inventory-Master Bahan {items.length} bahan dipotong otomatis: BHN-POK-001 Beras putih 0.1 Kg × {selectedOrder.jumlah_porsi} = {produksiDetail.kebutuhan.find(k=>k.inventory_items?.kode_bahan==='BHN-POK-001')?.totalQty.toFixed(3)||'0'} Kg, BHN-HEW-003 Daging Sapi 0.08 Kg × {selectedOrder.jumlah_porsi} = {produksiDetail.kebutuhan.find(k=>k.inventory_items?.kode_bahan==='BHN-HEW-003')?.totalQty.toFixed(3)||'0'} Kg, BHN-SAO-002 Minyak 0.015 Ltr × {selectedOrder.jumlah_porsi} = {produksiDetail.kebutuhan.find(k=>k.inventory_items?.kode_bahan==='BHN-SAO-002')?.totalQty.toFixed(3)||'0'} Ltr → sisa stok update!
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl">
-                <div className="font-bold" style={{fontSize:'14px'}}>📋 Checklist Produksi {selectedOrder.menus?.name} - {selectedOrder.jumlah_porsi} porsi - {selectedOrder.customer_name} ({produksiDetail?.kebutuhan?.length||0} bahan real dari Resep)</div>
-                <div className="grid md:grid-cols-2 gap-2 mt-2" style={{fontSize:'13px'}}>
-                  {produksiDetail?.kebutuhan?.map((k,i)=>(
-                    <div key={i} className="bg-white p-2 rounded border flex items-start gap-2">
-                      <input type="checkbox" className="mt-1" />
-                      <span>Siapkan {k.inventory_items?.nama_bahan} {selectedOrder.jumlah_porsi} × {k.qtyPerPorsi} {k.inventory_items?.satuan} = <b>{k.totalQty.toFixed(3)} {k.inventory_items?.satuan}</b> ({k.inventory_items?.kode_bahan})</span>
+                <>
+                  <div className="bg-white rounded-xl border overflow-hidden">
+                    <div className="bg-[#0A1931] text-white px-5 py-3 flex justify-between">
+                      <span className="font-bold text-[14px]">KOTAK 1 - Kebutuhan Produksi: {selectedOrder.jumlah_porsi} porsi - {produksiDetail.kebutuhan.length} bahan</span>
+                      <span className={`px-3 py-1 rounded-full font-bold text-[12px] ${produksiDetail.allCukup?'bg-green-500':'bg-red-500'}`}>{produksiDetail.allCukup?'✅ Stok Cukup':'⚠️ Kurang'}</span>
                     </div>
-                  ))}
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Masak {selectedOrder.menus?.name} + Nasi + Pelengkap</div>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Packing {selectedOrder.menus?.name} {selectedOrder.jumlah_porsi} box ({selectedOrder.customer_name})</div>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Quality Check - Siap Delivery ke {selectedOrder.customer_name} - {selectedOrder.tanggal_order}</div>
-                </div>
-                <div className="text-[11px] text-slate-500 mt-2">✅ Fix: Checklist sekarang ambil real 7 bahan dari tabel Kebutuhan di atas, bukan hardcode bumbu kunyit/bawang merah!</div>
-              </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[13px]">
+                        <thead className="bg-slate-100"><tr><th className="p-2">No</th><th className="p-2 text-left">Kode - Bahan</th><th className="p-2">Qty/Porsi</th><th className="p-2">Total Butuh</th><th className="p-2">Stok</th><th className="p-2">Sisa</th><th className="p-2">Status</th></tr></thead>
+                        <tbody>
+                          {produksiDetail.kebutuhan.map((k, idx)=>(
+                            <tr key={k.id} className="border-b">
+                              <td className="p-2 text-center font-bold bg-slate-50">{idx+1}</td>
+                              <td className="p-2"><b className="text-blue-700">{k.inventory_items?.kode_bahan}</b> {k.inventory_items?.nama_bahan} <span className="text-[11px] bg-slate-100 px-1 rounded">{k.inventory_items?.satuan}</span></td>
+                              <td className="p-2 text-center">{formatQty(k.qtyPerPorsi, k.inventory_items?.satuan)}</td>
+                              <td className="p-2 text-center font-bold bg-yellow-50">{formatQty(k.totalQty, k.inventory_items?.satuan)}</td>
+                              <td className="p-2 text-center">{formatQty(k.stok, k.inventory_items?.satuan)}</td>
+                              <td className="p-2 text-center font-bold text-green-700">{formatQty(k.sisa, k.inventory_items?.satuan)}</td>
+                              <td className="p-2 text-center">{k.cukup?'✅':'❌'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="p-3 bg-blue-50 text-[12px] border-t">
+                      <b>Penjelasan Beras No 1 (contoh satuan umum):</b><br/>
+                      Qty/Porsi resep = 0.1 Kg = <b>100 gram</b> per porsi. Order 10 porsi × 100 gram = <b>1.000 gram = 1 Kg</b> Total Butuh.<br/>
+                      Stok sekarang 170 Kg - Total Butuh 1 Kg = <b>Sisa 169 Kg</b> setelah potong. Jadi <b>1.000 di tabel lama = 1 Kg, bukan 1.000 Kg (seribu Kg)!</b> Seribu Kg itu 1 Ton untuk 10.000 porsi!<br/>
+                      <span className="text-slate-600">Format baru: &lt;1 Kg pakai gram (800 gram), &lt;1 Ltr pakai ml (150 ml), Pcs pakai Pcs (10 Pcs)</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border overflow-hidden">
+                    <div className="bg-yellow-50 border-b px-5 py-3 font-bold text-[14px]">📋 KOTAK 2 - Checklist Produksi (No sinkron dengan Kotak 1)</div>
+                    <div className="p-4 grid md:grid-cols-2 gap-2 text-[13px]">
+                      {produksiDetail.kebutuhan.map((k, idx)=>(
+                        <label key={k.id} className={`p-2 rounded border flex gap-2 cursor-pointer ${checkedItems[idx]?'bg-green-50':''}`}>
+                          <span className="w-6 h-6 rounded-full bg-[#0A1931] text-white flex items-center justify-center text-[11px] font-bold shrink-0">{idx+1}</span>
+                          <input type="checkbox" checked={!!checkedItems[idx]} onChange={e=>setCheckedItems(p=>({...p,[idx]:e.target.checked}))} />
+                          <span className={checkedItems[idx]?'line-through':''}>{idx+1}. Siapkan {k.inventory_items?.nama_bahan} = {formatQty(k.totalQty, k.inventory_items?.satuan)} ({k.inventory_items?.kode_bahan})</span>
+                        </label>
+                      ))}
+                      <label className="p-2 rounded border flex gap-2"><span className="w-6 h-6 rounded-full bg-slate-500 text-white flex items-center justify-center text-[11px] font-bold">{produksiDetail.kebutuhan.length+1}</span><input type="checkbox" /> Masak {selectedOrder.menus?.name}</label>
+                      <label className="p-2 rounded border flex gap-2"><span className="w-6 h-6 rounded-full bg-slate-500 text-white flex items-center justify-center text-[11px] font-bold">{produksiDetail.kebutuhan.length+2}</span><input type="checkbox" /> Packing {selectedOrder.jumlah_porsi} box</label>
+                      <label className="p-2 rounded border flex gap-2 md:col-span-2"><span className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-[11px] font-bold">{produksiDetail.kebutuhan.length+3}</span><input type="checkbox" /> QC - Delivery {selectedOrder.customer_name}</label>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border">
+                    <div className="font-bold mb-3">AKSI - Tombol di Bawah</div>
+                    <div className="flex gap-3">
+                      {selectedOrder.status==='Draft' && <button onClick={()=>updateStatus('Produksi')} className="bg-blue-600 text-white px-8 py-3 rounded-full font-bold">🔥 Mulai Produksi - Potong Stok {produksiDetail.kebutuhan.length} bahan</button>}
+                      {selectedOrder.status==='Produksi' && <><button onClick={()=>updateStatus('Selesai')} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold">✅ Selesai</button><button onClick={batalProduksi} className="bg-red-100 text-red-700 px-4 py-2 rounded-full">↩️ Batal</button></>}
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
+      </div>
+
+      <div className="bg-[#0A1931] text-white p-5 rounded-xl text-[13px]">
+        <b>💡 Ide 30 Menu / 1 Pesanan (Nasi Kotak Besar):</b><br/>
+        1. Tab Kategori: Nasi (5) | Lauk Utama (10) | Sayur (8) | Pelengkap (7) - tiap tab No 1..n<br/>
+        2. Gabung Duplicate: 30 menu pakai Beras sama → total 1 bahan, bukan 30 baris. Hitung total gabungan + expand per menu.<br/>
+        3. Batch Produksi: Batch 1 (Menu 1-10), Batch 2 (11-20), Batch 3 (21-30) + progress bar + filter hanya kurang stok.
       </div>
     </div>
   )
