@@ -1,9 +1,9 @@
 "use client"
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function DeliveryPageV3(){
+function DeliveryInner(){
   const searchParams = useSearchParams()
   const orderIdFromUrl = searchParams.get('order_id')
   const customerFromUrl = searchParams.get('customer')
@@ -22,13 +22,11 @@ export default function DeliveryPageV3(){
   useEffect(()=>{ if(orderIdFromUrl) setSelectedId(orderIdFromUrl) },[orderIdFromUrl])
 
   const deliveryOrders = useMemo(()=>{
-    // Hanya yang sudah lewat Production: Diproses, Dikemas, Dikirim, CLOSED, Delivery, Selesai
     return orders.filter(o=> ['Diproses','Dikemas','Dikirim','CLOSED','Delivery','Selesai'].includes(o.status))
   },[orders])
 
   const selected = useMemo(()=> orders.find(o=>o.id===selectedId)||null,[orders,selectedId])
 
-  // Logic indikator warna sync dari Production
   const getStepStatus = (step)=>{
     if(!selected) return 'idle'
     const s = selected.status
@@ -47,9 +45,9 @@ export default function DeliveryPageV3(){
   }
   async function handleClosed(){
     if(!selected) return
-    if(!confirm(`Tutup order ${selected.customer_name} - ${selected.menus?.name}?`)) return
+    if(!confirm(`Tutup order ${selected.customer_name}?`)) return
     await supabase.from('orders').update({status:'CLOSED', closed_at: new Date().toISOString()}).eq('id',selected.id)
-    alert(`✅ ${selected.customer_name} CLOSED - Selesai termonitor Admin & Owner`)
+    alert(`✅ ${selected.customer_name} CLOSED`)
     load()
   }
 
@@ -68,12 +66,11 @@ export default function DeliveryPageV3(){
           <div className="bg-[#0A1931] text-white px-4 py-3 font-bold text-[12px]">DAFTAR DELIVERY</div>
           <div className="max-h-[600px] overflow-y-auto">
             {deliveryOrders.length===0 ? (
-              <div className="p-6 text-center text-[12px] text-slate-400">Belum ada delivery<br/>Selesaikan Produksi dulu → klik Proses Produksi → QC → Next Delivery</div>
+              <div className="p-6 text-center text-[12px] text-slate-400">Belum ada delivery<br/>Selesaikan Produksi dulu</div>
             ) : deliveryOrders.map(o=>(
               <div key={o.id} onClick={()=>setSelectedId(o.id)} className={`p-3 border-b cursor-pointer text-[12px] hover:bg-slate-50 ${selectedId===o.id?'bg-yellow-50 border-l-4 border-l-yellow-400':''} ${o.id===orderIdFromUrl?'bg-green-50':''}`}>
                 <div className="font-bold flex justify-between"><span>{o.menus?.name} - {o.jumlah_porsi} box</span><span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${o.status==='Diproses'?'bg-yellow-100 text-yellow-700':o.status==='Dikemas'?'bg-orange-100 text-orange-700':o.status==='Dikirim'?'bg-blue-100 text-blue-700':o.status==='CLOSED'?'bg-black text-white':'bg-slate-100'}`}>{o.status}</span></div>
-                <div className="text-[11px] text-slate-500">{o.customer_name} • {new Date(o.created_at).toLocaleDateString('id-ID')}</div>
-                {o.id===orderIdFromUrl && <div className="text-[10px] text-green-600 font-bold mt-1">← Baru dari Production</div>}
+                <div className="text-[11px] text-slate-500">{o.customer_name}</div>
               </div>
             ))}
           </div>
@@ -81,11 +78,11 @@ export default function DeliveryPageV3(){
 
         <div className="md:col-span-2">
           {!selected ? (
-            <div className="bg-white p-10 rounded-2xl border text-center text-slate-400 text-[13px]">Pilih order di kiri</div>
+            <div className="bg-white p-10 rounded-2xl border text-center text-slate-400">Pilih order di kiri</div>
           ) : (
             <div className="bg-white rounded-2xl border shadow-sm p-5 space-y-5">
               <div className="flex justify-between">
-                <div><div className="font-black text-[16px]">{selected.menus?.name}</div><div className="text-[12px] text-slate-600">{selected.jumlah_porsi} porsi • {selected.customer_name}</div><div className="text-[11px] text-slate-400">ID: {selected.id}</div></div>
+                <div><div className="font-black text-[16px]">{selected.menus?.name}</div><div className="text-[12px] text-slate-600">{selected.jumlah_porsi} porsi • {selected.customer_name}</div></div>
                 <div className={`px-3 py-1 rounded-full text-[11px] font-bold h-fit ${selected.status==='CLOSED'?'bg-black text-white':selected.status==='Dikirim'?'bg-blue-100 text-blue-700':selected.status==='Dikemas'?'bg-orange-100 text-orange-700':'bg-yellow-100 text-yellow-700'}`}>{selected.status}</div>
               </div>
 
@@ -93,35 +90,34 @@ export default function DeliveryPageV3(){
                 <div className="font-bold text-[11px] mb-3">FLOW STATUS (Sync dari Production):</div>
                 <div className="flex flex-col md:flex-row gap-3">
                   {[1,2,3,4].map(step=>{
-                    const label = step===1?'Diproses (dari Production)':step===2?'Dikemas (QC OK)':step===3?'Dikirim':step===4?'CLOSED':''
+                    const label = step===1?'Diproses':step===2?'Dikemas':step===3?'Dikirim':'CLOSED'
                     const isActive = getStepStatus(step)==='active'
                     return (
                       <div key={step} className="flex items-center gap-2">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-black transition ${isActive ? (step===1?'bg-yellow-500 text-white':step===2?'bg-orange-500 text-white':step===3?'bg-blue-600 text-white':'bg-black text-white') : 'bg-slate-200 text-slate-400'}`}>{isActive?'✓':step}</div>
-                        <div className={`text-[11px] ${isActive?'font-black text-[#0A1931]':'text-slate-400'}`}>{label}</div>
-                        {step<4 && <div className={`hidden md:block w-6 h-[2px] ${getStepStatus(step+1)==='active'?'bg-green-400':'bg-slate-200'}`}></div>}
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-black ${isActive ? (step===1?'bg-yellow-500 text-white':step===2?'bg-orange-500 text-white':step===3?'bg-blue-600 text-white':'bg-black text-white') : 'bg-slate-200 text-slate-400'}`}>{isActive?'✓':step}</div>
+                        <div className={`text-[11px] ${isActive?'font-black':''}`}>{label}</div>
                       </div>
                     )
                   })}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-3">1 nyala saat Production klik Proses Produksi • 2 nyala saat QC OK + Next Delivery • 3 & 4 dikontrol di sini</div>
               </div>
 
-              <div className="space-y-3">
-                <div className="font-bold text-[12px]">Aksi Delivery (Hanya 2 Tombol):</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <button onClick={handleDikirim} disabled={selected.status==='CLOSED'} className={`px-5 py-3.5 rounded-full text-[13px] font-black shadow transition ${selected.status==='CLOSED'?'bg-slate-200 text-slate-400 cursor-not-allowed':'bg-blue-600 text-white hover:bg-blue-700'}`}>🚚 DIKIRIM</button>
-                  <button onClick={handleClosed} disabled={selected.status!=='Dikirim'} className={`px-5 py-3.5 rounded-full text-[13px] font-black shadow transition ${selected.status!=='Dikirim'?'bg-slate-100 text-slate-400 border':'bg-black text-white hover:bg-slate-800'}`}>✅ CLOSED</button>
-                </div>
-                {selected.status!=='Dikirim' && selected.status!=='CLOSED' && <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl">Klik DIKIRIM dulu sebelum bisa CLOSED</div>}
-                {selected.status==='CLOSED' && <div className="text-[11px] text-green-700 bg-green-50 border border-green-200 px-3 py-2 rounded-xl">✅ Order selesai - Termonitor di Dashboard Admin & Owner</div>}
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={handleDikirim} disabled={selected.status==='CLOSED'} className={`px-5 py-3.5 rounded-full text-[13px] font-black ${selected.status==='CLOSED'?'bg-slate-200 text-slate-400':'bg-blue-600 text-white hover:bg-blue-700'}`}>🚚 DIKIRIM</button>
+                <button onClick={handleClosed} disabled={selected.status!=='Dikirim'} className={`px-5 py-3.5 rounded-full text-[13px] font-black ${selected.status!=='Dikirim'?'bg-slate-100 text-slate-400':'bg-black text-white hover:bg-slate-800'}`}>✅ CLOSED</button>
               </div>
-
-              <div className="text-[10px] text-slate-400 pt-3 border-t">Dikirim dari Production pada {selected.delivery_at?new Date(selected.delivery_at).toLocaleString('id-ID'):'-'} • Customer: {selected.customer_name} • Alamat: {selected.alamat||'-'} • HP: {selected.no_hp||'-'}</div>
             </div>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+export default function DeliveryPage(){
+  return (
+    <Suspense fallback={<div className="p-6">Loading Delivery...</div>}>
+      <DeliveryInner/>
+    </Suspense>
   )
 }
