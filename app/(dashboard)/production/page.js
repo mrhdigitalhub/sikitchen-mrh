@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 const PERLENGKAPAN = ['Wajan Besar','Panci Nasi','Kompor Gas','Pisau Talenan','Box Sekat 3','Sendok Saji']
@@ -21,32 +22,28 @@ function formatQty(qty, satuan='Kg'){
 }
 
 export default function ProduksiPage(){
+  const router = useRouter()
   const [recipes,setRecipes]=useState([])
   const [orders,setOrders]=useState([])
   const [loading,setLoading]=useState(true)
   const [selectedId,setSelectedId]=useState('')
   const [filter,setFilter]=useState('Semua')
   
-  // Phase1
-  const [p1Times,setP1Times]=useState({}) // {index: menit}
+  const [p1Times,setP1Times]=useState({})
   const [p1Staff,setP1Staff]=useState({})
   const [p1Check,setP1Check]=useState({})
 
-  // Phase2 - checklist saja tanpa Ya/Tidak & QR
   const [p2Check,setP2Check]=useState({})
   const [p2Time,setP2Time]=useState(5)
 
-  // Phase3
   const [p3Time,setP3Time]=useState(90)
   const [p3Check,setP3Check]=useState(false)
 
-  // Phase4 - foto optional
   const [p4Time,setP4Time]=useState(15)
   const [p4Check,setP4Check]=useState(false)
   const [p4Foto,setP4Foto]=useState(false)
   const [p4File,setP4File]=useState(null)
 
-  // Phase6 - foto optional tanpa tanda tangan
   const [p6Time,setP6Time]=useState(5)
   const [p6Check,setP6Check]=useState({})
   const [p6Foto,setP6Foto]=useState(false)
@@ -63,7 +60,7 @@ export default function ProduksiPage(){
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
-  useEffect(()=>{ // reset saat ganti order - hemat memory
+  useEffect(()=>{
     setP1Times({}); setP1Staff({}); setP1Check({});
     setP2Check({}); setP3Check(false); setP4Check(false); setP4Foto(false); setP4File(null);
     setP6Check({}); setP6Foto(false); setP6File(null);
@@ -103,26 +100,37 @@ export default function ProduksiPage(){
     load()
   }
 
+  async function handleNextDelivery(){
+    if(!selected) return
+    // Validasi QC minimal 1 checklist
+    const qcDone = Object.values(p6Check).some(v=>v)
+    if(!qcDone){
+      if(!confirm('QC belum dicentang semua, tetap lanjut Delivery?')) return
+    }
+    await supabase.from('orders').update({status:'Delivery', delivery_at: new Date().toISOString()}).eq('id',selected.id)
+    alert(`🚚 ${selected.customer_name} - ${selected.menus?.name} siap Delivery!`)
+    // Redirect ke delivery dengan order_id agar auto filter
+    router.push(`/delivery?order_id=${selected.id}&customer=${encodeURIComponent(selected.customer_name||'')}`)
+  }
+
   if(loading) return <div className="p-6 font-mono">Loading Flow 7 Phase...</div>
 
   return (
     <div className="space-y-4 p-2 md:p-4 bg-slate-50 min-h-screen" style={{fontFamily:'Inter, Arial, sans-serif'}}>
-      {/* HEADER */}
       <div className="bg-white p-4 rounded-2xl border shadow-sm flex justify-between items-center">
         <div>
-          <div className="font-black text-[16px]">Produksi - Flow 7 Phase (Perbaikan Bos v2)</div>
-          <div className="text-[11px] text-slate-500">P1 OK | P2 Checklist Only | P3 OK | P4 Foto Optional | P5 OK | P6 Foto Optional No TTD | P7 OK | Est {totalMenit}m = {(totalMenit/60).toFixed(1)}j</div>
+          <div className="font-black text-[16px]">Produksi - Flow 7 Phase (Delivery Functional)</div>
+          <div className="text-[11px] text-slate-500">P1 OK | P2 Checklist Only | P3 OK | P4 Foto Optional | P5 OK | P6 Foto Optional No TTD | P7 Next Delivery Functional | Est {totalMenit}m = {(totalMenit/60).toFixed(1)}j</div>
         </div>
         <div className="bg-[#0A1931] text-white px-4 py-1.5 rounded-full text-[11px] font-bold">{orders.length} Order</div>
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
-        {/* LIST ORDER */}
         <div className="md:col-span-1 bg-white rounded-2xl border shadow-sm overflow-hidden h-fit">
           <div className="bg-[#0A1931] text-white px-4 py-3 flex justify-between items-center">
             <span className="font-bold text-[12px] tracking-wide">DAFTAR ORDER</span>
             <select className="text-black text-[11px] rounded-lg px-2 py-1" value={filter} onChange={e=>setFilter(e.target.value)}>
-              <option>Semua</option><option>Draft</option><option>Produksi</option><option>Selesai</option>
+              <option>Semua</option><option>Draft</option><option>Produksi</option><option>Selesai</option><option>Delivery</option>
             </select>
           </div>
           <div className="max-h-[700px] overflow-y-auto">
@@ -135,7 +143,6 @@ export default function ProduksiPage(){
           </div>
         </div>
 
-        {/* MAIN */}
         <div className="md:col-span-2 space-y-4">
           {!selected? <div className="bg-white p-10 border rounded-2xl text-center text-slate-400">Pilih Order di kiri</div> : (
             <>
@@ -144,7 +151,6 @@ export default function ProduksiPage(){
                 <div className={`px-3 py-1 rounded-full text-[10px] font-bold h-fit ${detail?.allCukup?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{detail?.allCukup?'Stok OK':'Stok Kurang'}</div>
               </div>
 
-              {/* PHASE 1 - OK */}
               <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <div className="bg-blue-600 text-white px-4 py-2.5 font-bold text-[12px] flex justify-between"><span>I. PHASE 1 - Persiapan Bahan (OK)</span><span className="bg-white text-blue-600 px-2 py-0.5 rounded-full text-[10px]">{totalP1} mnt</span></div>
                 <div className="p-2 space-y-1.5 max-h-[260px] overflow-y-auto">
@@ -159,10 +165,9 @@ export default function ProduksiPage(){
                 </div>
               </div>
 
-              {/* PHASE 2 - PERBAIKAN BOS: CHECKLIST SAJA TANPA YA/TIDAK & QR */}
               <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <div className="bg-orange-500 text-white px-4 py-2.5 font-bold text-[12px] flex justify-between items-center">
-                  <span>II. PHASE 2 - Perlengkapan (Checklist Only - No Ya/Tidak No QR)</span>
+                  <span>II. PHASE 2 - Perlengkapan (Checklist Only)</span>
                   <div className="flex gap-1 items-center bg-white/20 px-2 py-1 rounded-full"><input type="number" value={p2Time} onChange={e=>setP2Time(e.target.value)} className="w-10 text-black rounded text-[11px] px-1"/><span className="text-[10px]">mnt</span></div>
                 </div>
                 <div className="p-3 grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -174,13 +179,11 @@ export default function ProduksiPage(){
                 </div>
               </div>
 
-              {/* PHASE 3 - OK */}
               <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <div className="bg-red-600 text-white px-4 py-2.5 font-bold text-[12px] flex justify-between items-center"><span>III. PHASE 3 - Proses Memasak (OK)</span><div className="flex gap-2 items-center"><div className="flex gap-1 items-center bg-white/20 px-2 py-1 rounded-full"><input type="number" value={p3Time} onChange={e=>setP3Time(e.target.value)} className="w-10 text-black rounded text-[11px] px-1"/><span className="text-[10px]">mnt</span></div><input type="checkbox" checked={p3Check} onChange={e=>setP3Check(e.target.checked)} className="w-5 h-5"/></div></div>
-                <div className="p-3 text-[11px] bg-red-50/50">🔥 Masak <b>{selected.menus?.name}</b> sebanyak <b>{selected.jumlah_porsi} porsi</b> - checklist jika selesai.</div>
+                <div className="p-3 text-[11px] bg-red-50/50">🔥 Masak <b>{selected.menus?.name}</b> sebanyak <b>{selected.jumlah_porsi} porsi</b></div>
               </div>
 
-              {/* PHASE 4 - FOTO OPTIONAL */}
               <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <div className="bg-purple-600 text-white px-4 py-2.5 font-bold text-[12px] flex justify-between items-center"><span>IV. PHASE 4 - Penyajian (Foto Optional)</span><div className="flex gap-2 items-center"><div className="flex gap-1 items-center bg-white/20 px-2 py-1 rounded-full"><input type="number" value={p4Time} onChange={e=>setP4Time(e.target.value)} className="w-10 text-black rounded text-[11px] px-1"/><span className="text-[10px]">mnt</span></div><input type="checkbox" checked={p4Check} onChange={e=>setP4Check(e.target.checked)} className="w-5 h-5"/></div></div>
                 <div className="p-3 flex flex-col gap-2 text-[11px]">
@@ -191,17 +194,16 @@ export default function ProduksiPage(){
                 </div>
               </div>
 
-              {/* PHASE 5 - OK */}
               <div className="bg-white rounded-2xl border shadow-sm p-4">
                 <div className="font-black text-[12px] mb-3">V. PHASE 5 - Eksekusi (OK)</div>
                 <div className="flex gap-2">
                   {selected.status==='Draft' && <button onClick={()=>updateStatus('Produksi')} disabled={!detail?.allCukup} className="bg-blue-600 disabled:bg-slate-300 text-white px-6 py-2.5 rounded-full text-[12px] font-bold">🔥 Mulai Produksi - Potong Stok - {totalMenit} mnt</button>}
                   {selected.status==='Produksi' && <button onClick={()=>updateStatus('Selesai')} className="bg-green-600 text-white px-6 py-2.5 rounded-full text-[12px] font-bold">✅ Proses Selesai</button>}
                   {selected.status==='Selesai' && <div className="bg-green-50 text-green-700 px-4 py-2 rounded-full text-[12px] font-bold">✔ Sudah Selesai Produksi</div>}
+                  {selected.status==='Delivery' && <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-[12px] font-bold">🚚 Dalam Pengiriman</div>}
                 </div>
               </div>
 
-              {/* PHASE 6 - FOTO OPTIONAL TANPA TANDA TANGAN */}
               <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <div className="bg-emerald-600 text-white px-4 py-2.5 font-bold text-[12px] flex justify-between items-center"><span>VI. PHASE 6 - QC (Foto Optional, Tanpa TTD)</span><div className="flex gap-1 items-center bg-white/20 px-2 py-1 rounded-full"><input type="number" value={p6Time} onChange={e=>setP6Time(e.target.value)} className="w-10 text-black rounded text-[11px] px-1"/><span className="text-[10px]">mnt</span></div></div>
                 <div className="p-3 grid grid-cols-2 gap-2 text-[11px]">
@@ -213,11 +215,12 @@ export default function ProduksiPage(){
                 </div>
               </div>
 
-              {/* PHASE 7 - OK */}
-              <div className="bg-[#0A1931] text-white rounded-2xl p-4">
-                <div className="font-black text-[12px] mb-2">VII. PHASE 7 - Next Delivery (OK)</div>
-                <button className="bg-white text-[#0A1931] px-6 py-2.5 rounded-full text-[12px] font-black">🚚 Next Delivery → {selected.customer_name}</button>
-                <div className="text-[10px] text-slate-400 mt-2">Total Estimasi {totalMenit} menit = {(totalMenit/60).toFixed(1)} jam | P1 {totalP1} + P2 {p2Time} + P3 {p3Time} + P4 {p4Time} + P6 {p6Time}</div>
+              <div className="bg-[#0A1931] text-white rounded-2xl p-4 shadow-lg">
+                <div className="font-black text-[12px] mb-3">VII. PHASE 7 - Next Delivery (Functional)</div>
+                <button onClick={handleNextDelivery} className="bg-white text-[#0A1931] px-6 py-3 rounded-full text-[12px] font-black hover:bg-yellow-300 transition shadow">
+                  🚚 Next Delivery → {selected.customer_name} - {selected.jumlah_porsi} box
+                </button>
+                <div className="text-[10px] text-slate-400 mt-3">Total Estimasi {totalMenit} menit = {(totalMenit/60).toFixed(1)} jam | P1 {totalP1} + P2 {p2Time} + P3 {p3Time} + P4 {p4Time} + P6 {p6Time} | Klik untuk ubah status jadi Delivery & buka halaman Delivery</div>
               </div>
             </>
           )}
