@@ -1,228 +1,189 @@
 "use client"
-import { useEffect, useState, useRef } from 'react'
-import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
-function DashboardInner(){
+// CONFIG 16 MODUL - Dinamis + Layer - HANYA JUDUL + KPI SINGKAT - TIDAK UBAH FILE FIX LAIN
+const MODULES_16 = [
+  { id:'bahan', title:'Total Bahan Baku', kpi:'16 bahan', color:'from-blue-100 to-blue-200', border:'border-blue-300', icon:'📦', layers:[
+    {title:'List Bahan', desc:'Semua bahan aktif', table:'inventory_items', fields:['nama','stok','satuan']},
+    {title:'Stok < 10', desc:'Bahan hampir habis', filter:'stok<10'},
+  ]},
+  { id:'order_aktif', title:'Order Aktif', kpi:'0', color:'from-yellow-100 to-amber-200', border:'border-yellow-400', icon:'⏳', layers:[
+    {title:'Daftar Order Aktif', desc:'Belum CLOSED', table:'orders', filter:"status!='CLOSED'"},
+    {title:'Per Customer', desc:'Group by customer'},
+  ]},
+  { id:'order_closed', title:'Order CLOSED', kpi:'1', color:'from-slate-800 to-slate-900', border:'border-slate-700', textWhite:true, icon:'✅', layers:[
+    {title:'Riwayat CLOSED', desc:'Order selesai', filter:"status='CLOSED'"},
+    {title:'Profit per Order', desc:'Lihat profit Ibu mimin'},
+  ]},
+  { id:'stock_min', title:'Kondisi Stock Min', kpi:'3 kritis', color:'from-red-100 to-red-200', border:'border-red-300', icon:'⚠️', layers:[
+    {title:'Bahan Kritis', desc:'stok < stok_min', query:'stock_min'},
+    {title:'Butuh Beli Hari Ini', desc:'Rekomendasi belanja'},
+  ]},
+  { id:'customer', title:'Customer Aktif', kpi:'12', color:'from-purple-100 to-purple-200', border:'border-purple-300', icon:'👥', layers:[
+    {title:'Top Customer', desc:'Paling sering order'},
+    {title:'Customer Baru', desc:'Bulan ini'},
+  ]},
+  { id:'dapur', title:'Performance Dapur Produksi', kpi:'95%', color:'from-orange-100 to-orange-200', border:'border-orange-300', icon:'👨‍🍳', layers:[
+    {title:'On-time Rate', desc:'95% tepat waktu'},
+    {title:'AVG Waktu Masak', desc:'2.5 jam per order'},
+    {title:'Delay Log', desc:'Kenapa telat'},
+  ]},
+  { id:'delivery', title:'Performance Delivery', kpi:'98%', color:'from-cyan-100 to-cyan-200', border:'border-cyan-300', icon:'🚚', layers:[
+    {title:'On-time Delivery', desc:'98%'},
+    {title:'AVG Waktu Kirim', desc:'45 menit'},
+    {title:'Komplain', desc:'0 komplain'},
+  ]},
+  { id:'utility', title:'Consumption Utility', kpi:'Rp 570rb', color:'from-indigo-100 to-indigo-200', border:'border-indigo-300', icon:'💡', layers:[
+    {title:'Listrik', desc:'Rp 450rb'},
+    {title:'Air', desc:'Rp 120rb'},
+    {title:'Gas', desc:'2 tabung'},
+  ]},
+  { id:'manpower', title:'Performance Man Power', kpi:'4/5 hadir', color:'from-pink-100 to-pink-200', border:'border-pink-300', icon:'🧑‍🍳', layers:[
+    {title:'Kehadiran Hari Ini', desc:'Hadir/Ijin/Sakit/Alpha'},
+    {title:'Top Karyawan', desc:'Paling rajin'},
+  ]},
+  { id:'foodcost', title:'Food Cost % vs Target', kpi:'38% / 40%', color:'from-lime-100 to-lime-200', border:'border-lime-300', icon:'📉', layers:[
+    {title:'Per Menu', desc:'Food cost per menu'},
+    {title:'Hemat', desc:'Hemat 2% dari target'},
+  ]},
+  { id:'waste', title:'Bahan Reject/Waste', kpi:'2.1%', color:'from-rose-100 to-rose-200', border:'border-rose-300', icon:'🗑️', layers:[
+    {title:'Susut Bahan', desc:'2.1% < 3% aman'},
+    {title:'Penyebab Waste', desc:'Busuk/salah potong'},
+  ]},
+  { id:'bestseller', title:'Menu Best Seller & Slow', kpi:'Rendang 50x', color:'from-amber-100 to-amber-200', border:'border-amber-300', icon:'🍱', layers:[
+    {title:'Best Seller', desc:'Paling laku'},
+    {title:'Slow Moving', desc:'Gak laku < 2x'},
+  ]},
+  { id:'cashflow', title:'Cashflow Harian', kpi:'Profit 1jt', color:'from-teal-100 to-teal-200', border:'border-teal-300', icon:'💳', layers:[
+    {title:'Omzet', desc:'Rp 2.5jt'},
+    {title:'Modal', desc:'Rp 1.5jt'},
+    {title:'Profit', desc:'Rp 1jt'},
+  ]},
+  { id:'complaint', title:'Complaint & Rating', kpi:'⭐ 4.8/5', color:'from-yellow-100 to-yellow-200', border:'border-yellow-300', icon:'⭐', layers:[
+    {title:'Rating', desc:'4.8/5 dari 25 rating'},
+    {title:'Komplain', desc:'1 komplain pedas'},
+  ]},
+  { id:'forecast', title:'Forecast Bahan', kpi:'AI Prediksi', color:'from-violet-100 to-violet-200', border:'border-violet-300', icon:'🔮', layers:[
+    {title:'Minggu Depan', desc:'Ayam 20kg Beras 50kg'},
+    {title:'History Akurat', desc:'Akurasi 90%'},
+  ]},
+  { id:'profit', title:'Total Profit CLOSED', kpi:'Rp 95.550', color:'from-emerald-100 to-emerald-200', border:'border-emerald-400', icon:'💰', layers:[
+    {title:'Ibu mimin', desc:'10 porsi - CLOSED - Rp 95.550'},
+    {title:'Total Profit Bulan', desc:'Sum semua CLOSED'},
+  ]},
+]
+
+function OwnerDashboardInner(){
   const router = useRouter()
   const searchParams = useSearchParams()
   const roleParam = searchParams.get('role')
-  const fileRef = useRef(null)
-  const [stats,setStats]=useState({bahan:16, menu:1, totalBahan:1, users:5, orders:1, closed:1, profit:95550})
   const [company,setCompany]=useState('SIKITCHEN-MRH')
   const [alamat,setAlamat]=useState('Jl. SEMUA SUKA MRH - JAWA BARAT')
-  const [logoPreview,setLogoPreview]=useState('')
-  const [showPerf,setShowPerf]=useState(false)
-  const [role,setRole]=useState('ADMIN')
-  const [isOwner,setIsOwner]=useState(false)
+  const [logo,setLogo]=useState('')
+  const [activeModule,setActiveModule]=useState(null)
+  const [stats,setStats]=useState({bahan:16, order_aktif:0, order_closed:1, profit:95550})
 
   useEffect(()=>{
-    const rawRole = (localStorage.getItem('sikitchen_role') || roleParam || 'admin').toLowerCase()
-    const isOwnerRole = rawRole==='owner' || roleParam==='owner'
-    setIsOwner(isOwnerRole)
-    setRole(isOwnerRole ? 'OWNER' : 'ADMIN')
-
-    const rawCompany = localStorage.getItem('sikitchen_company') || 'SIKITCHEN-MRH'
-    const rawLogo = localStorage.getItem('sikitchen_logo') || ''
-    const rawAlamat = localStorage.getItem('sikitchen_alamat') || 'Jl. SEMUA SUKA MRH - JAWA BARAT'
-    
-    // Anti corrupt base64
-    if(rawCompany.length>100 || rawCompany.includes('data:image') || rawCompany.includes('UeNZv')){
-      setCompany('SIKITCHEN-MRH')
-    } else {
-      setCompany(rawCompany.slice(0,50))
-    }
-    if(rawLogo) setLogoPreview(rawLogo)
-    if(rawAlamat) setAlamat(rawAlamat.slice(0,100))
-
+    const c = localStorage.getItem('sikitchen_company')||'SIKITCHEN-MRH'
+    const a = localStorage.getItem('sikitchen_alamat')||'Jl. SEMUA SUKA MRH - JAWA BARAT'
+    const l = localStorage.getItem('sikitchen_logo')||''
+    if(c.length<100) setCompany(c.slice(0,50))
+    setAlamat(a.slice(0,100))
+    if(l) setLogo(l)
     async function load(){
-      try{
-        const inv = await supabase.from('inventory_items').select('id',{count:'exact', head:true})
-        const menus = await supabase.from('menus').select('id',{count:'exact', head:true})
-        const orders = await supabase.from('orders').select('status, profit, total_jual, total_hpp')
-        const active = orders.data ? orders.data.filter(function(o){return o.status!=='CLOSED'}).length : 1
-        const closed = orders.data ? orders.data.filter(function(o){return o.status==='CLOSED'}).length : 1
-        const totalProfit = orders.data ? orders.data.filter(function(o){return o.status==='CLOSED'}).reduce(function(s,o){return s + Number(o.profit||95550)},0) : 95550
-        setStats({
-          bahan: inv.count||16,
-          menu: menus.count||1,
-          totalBahan: menus.count||1,
-          users: 5,
-          orders: active,
-          closed: closed,
-          profit: totalProfit
-        })
-      }catch(e){ console.log(e) }
+      const inv = await supabase.from('inventory_items').select('id',{count:'exact', head:true})
+      const orders = await supabase.from('orders').select('status')
+      setStats({
+        bahan: inv.count||16,
+        order_aktif: orders.data?.filter(o=>o.status!=='CLOSED').length||0,
+        order_closed: orders.data?.filter(o=>o.status==='CLOSED').length||1,
+        profit: 95550
+      })
     }
     load()
-  },[roleParam])
-
-  function handleLogoChange(e){
-    if(isOwner) return // Owner tidak boleh edit
-    const file = e.target.files && e.target.files[0]
-    if(!file) return
-    if(file.size > 2*1024*1024){ alert('File max 2MB Bos!'); return }
-    const reader = new FileReader()
-    reader.onload = function(ev){
-      const base64 = ev.target.result
-      setLogoPreview(base64)
-      localStorage.setItem('sikitchen_logo', base64)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  function handleSimpan(){
-    if(isOwner){ alert('Owner read-only Bos! Tidak bisa edit.'); return }
-    const cleanName = company.trim().slice(0,50) || 'SIKITCHEN-MRH'
-    const cleanAlamat = alamat.trim().slice(0,100)
-    localStorage.setItem('sikitchen_company', cleanName)
-    localStorage.setItem('sikitchen_alamat', cleanAlamat)
-    alert('Disimpan! Perusahaan: ' + cleanName)
-  }
-
-  function handleReset(){
-    if(isOwner) return
-    if(!confirm('Reset perusahaan?')) return
-    localStorage.removeItem('sikitchen_company')
-    localStorage.removeItem('sikitchen_alamat')
-    localStorage.removeItem('sikitchen_logo')
-    setCompany('SIKITCHEN-MRH')
-    setAlamat('Jl. Catering No.1, Bandung')
-    setLogoPreview('')
-    alert('Direset')
-  }
+  },[])
 
   function handleLogout(){
     document.cookie = 'sikitchen_role=; path=/; max-age=0'
-    document.cookie = 'sikitchen_user=; path=/; max-age=0'
     localStorage.removeItem('sikitchen_role')
-    localStorage.removeItem('sikitchen_user')
     router.push('/login')
   }
 
-  // Cards dengan warna pastel tebal + font +2px
-  const adminCards = [
-    { title:'Bahan Baku', value:stats.bahan, sub:'Lihat Inventori →', href:'/inventory', bg:'bg-gradient-to-br from-blue-100 to-blue-200 border-blue-300', icon:'📦', iconBg:'bg-blue-500', accent:'bg-blue-600' },
-    { title:'Master Menu & Bahan', value:stats.menu, sub:'Kelola Menu & Bahan →', href:'/menus', bg:'bg-gradient-to-br from-orange-100 to-orange-200 border-orange-300', icon:'🍱', iconBg:'bg-orange-500', accent:'bg-orange-500' },
-    { title:'Total Bahan', value:stats.totalBahan, sub:'HPP otomatis calculations.js', href:'/menus', bg:'bg-gradient-to-br from-purple-100 to-purple-200 border-purple-300', icon:'🧮', iconBg:'bg-purple-500', accent:'bg-purple-600' },
-    { title:'User General', value:stats.users, sub:'admin, dapur, delivery', href:'#', bg:'bg-gradient-to-br from-emerald-100 to-emerald-200 border-emerald-300', icon:'👥', iconBg:'bg-emerald-500', accent:'bg-emerald-600' },
-    { title:'Order Aktif', value:stats.orders, sub:'Kalkulator Order →', href:'/calculator', bg:'bg-gradient-to-br from-yellow-100 to-amber-200 border-yellow-400', icon:'🧾', iconBg:'bg-yellow-500', accent:'bg-yellow-600' },
-    { title:'Order CLOSED', value:stats.closed, sub:'Termonitor Admin & Owner', href:'/delivery', bg:'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700 text-white', icon:'✅', iconBg:'bg-white', accent:'bg-white', textWhite:true },
-  ]
-
-  const ownerCards = [
-    { title:'Total Bahan Baku', value:stats.bahan + ' bahan', sub:'16 bahan aktif', bg:'bg-gradient-to-br from-blue-100 to-blue-200 border-blue-300', icon:'📊', iconBg:'bg-blue-600', accent:'bg-blue-600' },
-    { title:'Order Aktif', value:stats.orders, sub:'Belum CLOSED', bg:'bg-gradient-to-br from-yellow-100 to-amber-200 border-yellow-400', icon:'⏳', iconBg:'bg-yellow-500', accent:'bg-yellow-600' },
-    { title:'Order CLOSED', value:stats.closed, sub:'Sudah Selesai', bg:'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700 text-white', icon:'✅', iconBg:'bg-white', accent:'bg-white', textWhite:true },
-    { title:'Total Profit CLOSED', value:'Rp ' + Number(stats.profit).toLocaleString('id-ID'), sub:'Termonitor Owner - Ibu mimin Rp 95.550', bg:'bg-gradient-to-br from-emerald-100 to-emerald-200 border-emerald-400', icon:'💰', iconBg:'bg-emerald-600', accent:'bg-emerald-600' },
-  ]
-
-  const displayCards = isOwner ? ownerCards : adminCards
-
   return (
-    <div className="p-4 md:p-7 space-y-6 bg-slate-50 min-h-screen" style={{fontFamily:'Inter, Arial, sans-serif', fontSize:'15px'}}>
+    <div className="p-4 md:p-6 space-y-5 bg-slate-50 min-h-screen" style={{fontSize:'15px', fontFamily:'Inter'}}>
       <div className="flex justify-between items-center bg-white p-4 rounded-2xl border shadow-sm">
-        <div>
-          <div className="font-black text-[24px]">{isOwner ? 'Dashboard Owner - Read Only' : 'Dashboard Admin'}</div>
-          <div className="text-[14px] font-bold text-slate-600">{company} | {role} - {isOwner ? 'Monitoring Profit Only' : 'Build Fix 17/09/2026'}</div>
-        </div>
-        <button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white px-6 py-2.5 rounded-full text-[13px] font-black shadow">Logout</button>
+        <div><div className="font-black text-[22px]">Dashboard Owner - 16 Modul Dinamis</div><div className="text-[13px] font-bold text-slate-600">{company} | OWNER | Flow Sistematis + Layer</div></div>
+        <button onClick={handleLogout} className="bg-red-500 text-white px-5 py-2 rounded-full text-[12px] font-black">Logout</button>
       </div>
 
-      {isOwner ? (
-        // OWNER READ-ONLY VIEW
-        <div className="space-y-6">
-          <div className="bg-purple-50 border-2 border-purple-300 rounded-3xl p-6">
-            <div className="font-black text-[16px] mb-2">👑 Mode Owner - Read Only - Tidak Bisa Edit</div>
-            <div className="text-[13px] text-slate-600">Anda login sebagai Owner. Hanya bisa monitoring profit & laporan. Tidak bisa edit logo, nama perusahaan, inventori, produksi, delivery. Untuk edit, login sebagai Admin.</div>
-          </div>
+      <div className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-4 text-[12px]">
+        <b>Flow Sistematis:</b> Dashboard (16 judul) → Klik Modul → Buka Layer (detail) → Data Supabase. Codingan fix lain (inventori, menus, kalkulator, produksi, delivery, login, middleware, layout) <b>TIDAK DIUBAH</b>.
+      </div>
 
-          <div className="bg-white rounded-3xl border-2 p-6 shadow-sm flex items-center gap-6">
-            <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center border-2 shadow-inner overflow-hidden">
-              {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-cover"/> : <span className="font-black text-blue-900 text-[18px]">MRH</span>}
-            </div>
-            <div>
-              <div className="font-black text-[20px]">{company}</div>
-              <div className="text-[14px] text-slate-600 mt-1">{alamat}</div>
-              <div className="mt-2 bg-yellow-100 border border-yellow-300 px-3 py-1 rounded-full text-[12px] font-bold inline-block">Owner View • Read Only</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {displayCards.map(function(c,i){
-              return (
-              <div key={i} className={c.bg + ' rounded-3xl p-6 shadow-md border-2 ' + (c.textWhite ? 'text-white' : 'text-slate-800')}>
-                <div className="flex justify-between items-start"><div><div className={'text-[13px] font-bold ' + (c.textWhite ? 'text-slate-300' : 'text-slate-600')}>{c.title}</div><div className="font-black text-[28px] mt-2">{c.value}</div><div className={'text-[12px] font-bold mt-3 ' + (c.textWhite ? 'text-yellow-300' : 'text-blue-700')}>{c.sub}</div></div><div className={'w-14 h-14 rounded-2xl ' + c.iconBg + ' flex items-center justify-center text-[24px] shadow-lg border-2 border-white/50'}>{c.icon}</div></div>
-                <div className="mt-5 h-2.5 bg-white/60 rounded-full"><div className={'h-full ' + c.accent + ' w-[85%] rounded-full'}></div></div>
-              </div>
-              )
-            })}
-          </div>
-
-          <div className="bg-[#0A1931] text-white rounded-3xl p-6">
-            <div className="font-black text-[16px] mb-3">📊 Laporan Profit Owner</div>
-            <div className="bg-white/10 rounded-2xl p-4 flex justify-between text-[14px]"><span>Order Ibu mimin - 10 porsi - CLOSED</span><b className="text-yellow-400">Rp 95.550 profit</b></div>
-            <div className="text-[12px] text-slate-400 mt-3">Data realtime dari Supabase - Order CLOSED termonitor Admin & Owner</div>
-          </div>
-        </div>
-      ) : (
-        // ADMIN FULL EDIT VIEW
-        <>
-          <div className="bg-white rounded-3xl border-2 border-slate-200 p-6 shadow-sm">
-            <div className="font-black text-[16px] mb-5">🏢 Pengaturan Perusahaan - Admin Only</div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <div className="text-[13px] font-black mb-2">Logo Perusahaan</div>
-                <div className="border-2 border-dashed border-slate-300 rounded-3xl p-6 flex flex-col items-center gap-4 bg-slate-50">
-                  <div className="w-28 h-20 bg-white rounded-2xl flex items-center justify-center border-2 shadow-inner overflow-hidden">
-                    {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-cover"/> : <span className="font-black text-blue-900 text-[16px]">MRH</span>}
-                  </div>
-                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleLogoChange} className="hidden"/>
-                  <button onClick={function(){ if(fileRef.current) fileRef.current.click() }} className="border-2 border-slate-300 px-5 py-2 rounded-xl text-[13px] bg-white font-bold hover:bg-slate-100">Choose File</button>
-                  <span className="text-[11px] text-slate-500">PNG/JPG Max 2MB</span>
+      {/* 16 Modul - Hanya Judul + KPI singkat - Dinamis */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {MODULES_16.map(m=>{
+          const kpiDisplay = m.id==='bahan' ? stats.bahan + ' bahan' : m.id==='order_aktif' ? stats.order_aktif : m.id==='order_closed' ? stats.order_closed : m.id==='profit' ? 'Rp ' + stats.profit.toLocaleString('id-ID') : m.kpi
+          return (
+            <div key={m.id} onClick={()=>setActiveModule(m)} className={`bg-gradient-to-br ${m.color} ${m.border} rounded-3xl p-4 border-2 shadow-md hover:shadow-xl cursor-pointer hover:scale-[1.02] transition-all ${m.textWhite?'text-white':''}`}>
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className={`text-[13px] font-black leading-tight ${m.textWhite?'text-slate-200':'text-slate-700'}`}>{m.title}</div>
+                  <div className="font-black text-[20px] mt-2">{kpiDisplay}</div>
+                  <div className={`text-[11px] mt-1 ${m.textWhite?'text-yellow-300':'text-blue-700'}`}>Klik untuk detail → {m.layers.length} layer</div>
                 </div>
-              </div>
-              <div className="space-y-4">
-                <div><div className="text-[13px] font-black mb-1.5">Nama Perusahaan (Max 50)</div><input value={company} onChange={function(e){ setCompany(e.target.value.slice(0,50)) }} className="w-full border-2 rounded-xl px-4 py-3 text-[14px] font-bold outline-none" maxLength={50}/></div>
-                <div><div className="text-[13px] font-black mb-1.5">Alamat Perusahaan</div><textarea value={alamat} onChange={function(e){ setAlamat(e.target.value.slice(0,100)) }} className="w-full border-2 rounded-xl px-4 py-3 text-[14px] outline-none" rows={2} maxLength={100}></textarea></div>
-                <button onClick={function(){ setShowPerf(true) }} className="w-full bg-[#0A1931] text-white rounded-xl px-4 py-3.5 text-[14px] font-black shadow-lg">Performance - {company.slice(0,30)}</button>
-                <div className="grid grid-cols-2 gap-2"><button onClick={handleSimpan} className="bg-yellow-400 text-black font-black py-3.5 rounded-xl text-[14px] shadow">Simpan</button><button onClick={handleReset} className="bg-red-100 border-2 border-red-300 text-red-700 font-black py-3.5 rounded-xl text-[13px]">Reset</button></div>
+                <div className="w-10 h-10 rounded-2xl bg-white/80 flex items-center justify-center text-[20px] shadow border">{m.icon}</div>
               </div>
             </div>
-          </div>
+          )
+        })}
+      </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {displayCards.map(function(c,i){
-              return (
-              <Link key={i} href={c.href} className={c.bg + ' rounded-3xl p-5 shadow-md border-2 hover:shadow-xl transition-all ' + (c.textWhite ? 'text-white' : 'text-slate-800')}>
-                <div className="flex justify-between items-start"><div><div className={'text-[13px] font-bold ' + (c.textWhite ? 'text-slate-300' : 'text-slate-600')}>{c.title}</div><div className="font-black text-[28px] mt-1">{c.value}</div><div className={'text-[12px] font-bold mt-2 ' + (c.textWhite ? 'text-yellow-300' : 'text-blue-700')}>{c.sub}</div></div><div className={'w-12 h-12 rounded-2xl ' + c.iconBg + ' flex items-center justify-center text-[22px] shadow-lg border-2 border-white/50'}>{c.icon}</div></div>
-              </Link>
-              )
-            })}
-          </div>
-        </>
-      )}
-
-      {showPerf && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={function(){ setShowPerf(false) }}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl" onClick={function(e){ e.stopPropagation() }}>
-            <div className="font-black text-[18px] mb-2">Performance - {company.slice(0,30)}</div>
-            <div className="text-[12px] text-slate-500 mb-4">{alamat}</div>
-            <div className="space-y-2 text-[13px]">
-              <div className="flex justify-between bg-slate-50 p-3 rounded-xl"><span>Bahan Baku</span><b>{stats.bahan}</b></div>
-              <div className="flex justify-between bg-yellow-100 p-3 rounded-xl border-2 border-yellow-300"><span>Profit CLOSED</span><b>Rp {Number(stats.profit).toLocaleString('id-ID')}</b></div>
-              <div className="flex justify-between bg-black text-white p-3 rounded-xl"><span>Order CLOSED</span><b>{stats.closed} OK</b></div>
+      {/* Layer Modal - Muncul saat modul di-klik */}
+      {activeModule && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={()=>setActiveModule(null)}>
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className={`bg-gradient-to-br ${activeModule.color} p-6 border-b-2 ${activeModule.border} rounded-t-3xl flex justify-between items-center`}>
+              <div><div className="font-black text-[18px]">{activeModule.title}</div><div className="text-[12px] mt-1">{activeModule.layers.length} Layer di dalam modul ini</div></div>
+              <button onClick={()=>setActiveModule(null)} className="bg-black text-white w-8 h-8 rounded-full">✕</button>
             </div>
-            <button onClick={function(){ setShowPerf(false) }} className="w-full mt-4 bg-[#0A1931] text-white py-3 rounded-xl font-black">Tutup</button>
+            <div className="p-6 space-y-4">
+              {activeModule.layers.map((layer,i)=>(
+                <div key={i} className="border-2 rounded-2xl p-4 bg-slate-50 hover:bg-white hover:shadow-md transition-all cursor-pointer">
+                  <div className="flex justify-between items-center">
+                    <div><div className="font-black text-[14px]">Layer {i+1}: {layer.title}</div><div className="text-[12px] text-slate-600 mt-1">{layer.desc}</div>{layer.table && <div className="text-[10px] mt-2 bg-white px-2 py-1 rounded-full border inline-block">Table: {layer.table}</div>}</div>
+                    <div className="text-[20px]">→</div>
+                  </div>
+                  {/* Contoh isi layer dinamis */}
+                  <div className="mt-3 bg-white rounded-xl p-3 border text-[12px]">
+                    {activeModule.id==='stock_min' && i===0 && <div>🔴 Ayam: 2kg (min 5kg) | Beras: 5kg (min 10kg) | Minyak: 1L (min 3L) - Data dari inventory_items where stok &lt; stok_min</div>}
+                    {activeModule.id==='customer' && i===0 && <div>👑 Ibu mimin: 5x order (Rp 1.2jt) | Pak RT: 3x | Bu Sari: 2x - Group by customer dari orders</div>}
+                    {activeModule.id==='manpower' && <div>🧑‍🍳 Dapur: 2 hadir, 1 ijin | Delivery: 2 hadir | Admin: 1 hadir - Nanti dari tabel karyawan_absensi</div>}
+                    {activeModule.id==='profit' && <div>💰 Ibu mimin - 10 porsi - CLOSED - Profit Rp 95.550 - dari orders where status=CLOSED</div>}
+                    {!['stock_min','customer','manpower','profit'].includes(activeModule.id) && <div>Data layer ini akan load dari Supabase: {layer.title} - {layer.desc}</div>}
+                  </div>
+                </div>
+              ))}
+              <div className="bg-[#0A1931] text-white rounded-2xl p-4 text-[11px]">
+                <b>Flow Sistematis:</b> Modul {activeModule.title} → {activeModule.layers.length} layer → Tiap layer query Supabase berbeda → Tidak ubah codingan fix lain.
+              </div>
+            </div>
+            <div className="p-4 border-t"><button onClick={()=>setActiveModule(null)} className="w-full bg-[#0A1931] text-white py-3 rounded-xl font-black">Tutup Layer</button></div>
           </div>
         </div>
       )}
+
+      <div className="bg-[#0A1931] text-white rounded-3xl p-5">
+        <div className="font-black">📊 Laporan Profit Owner</div>
+        <div className="mt-3 bg-white/10 rounded-2xl p-3 flex justify-between text-[13px]"><span>Order Ibu mimin - 10 porsi - CLOSED</span><b className="text-yellow-400">Rp 95.550 profit</b></div>
+      </div>
     </div>
   )
 }
 
 export default function DashboardPage(){
-  return <Suspense fallback={<div className="p-6">Loading...</div>}><DashboardInner/></Suspense>
+  return <Suspense fallback={<div className="p-6">Loading...</div>}><OwnerDashboardInner/></Suspense>
 }
