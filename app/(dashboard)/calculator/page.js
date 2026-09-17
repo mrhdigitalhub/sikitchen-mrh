@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-export default function KalkulatorOrder(){
+export default function KalkulatorOrderFix(){
   const [menus,setMenus]=useState([])
   const [inventory,setInventory]=useState([])
   const [selectedMenu,setSelectedMenu]=useState('')
@@ -11,35 +11,40 @@ export default function KalkulatorOrder(){
   const [tanggal,setTanggal]=useState(new Date().toISOString().slice(0,10))
   const [orders,setOrders]=useState([])
   const [loading,setLoading]=useState(true)
+  const [lastUpdate,setLastUpdate]=useState(new Date())
 
   async function loadAll(){
-    setLoading(true)
     const [m, inv, ord] = await Promise.all([
-      supabase.from('menus').select('*, recipes(qty_per_porsi, inventory_items(harga_baru,satuan))').limit(100),
+      supabase.from('menus').select('*, recipes(qty_per_porsi, inventory_items(harga_baru))').limit(100),
       supabase.from('inventory_items').select('*').limit(1000),
       supabase.from('orders').select('*, menus(name)').order('created_at',{ascending:false}).limit(100)
     ])
     if(m.data) setMenus(m.data)
     if(inv.data) setInventory(inv.data)
-    if(ord.data) setOrders(ord.data)
+    if(ord.data) {
+      setOrders(ord.data)
+      console.log('Orders loaded:', ord.data.map(o=>`${o.customer_name}:${o.status}`))
+    }
     setLoading(false)
+    setLastUpdate(new Date())
   }
 
   useEffect(()=>{
     loadAll()
-    // REALTIME SYNC - ini yang bikin Kalkulator auto update pas Delivery klik CLOSED
-    const channel = supabase.channel('orders-realtime')
-      .on('postgres_changes',{event:'*', schema:'public', table:'orders'}, payload=>{
-        console.log('Realtime order update:', payload)
-        if(payload.eventType==='UPDATE'){
-          setOrders(prev=> prev.map(o=> o.id===payload.new.id ? {...o, ...payload.new, menus: o.menus} : o))
-        }
-        if(payload.eventType==='INSERT'){
-          loadAll()
-        }
+    // Realtime + Polling fallback tiap 3 detik biar pasti sync
+    const channel = supabase.channel('orders-changes')
+      .on('postgres_changes',{event:'*', schema:'public', table:'orders'}, (payload)=>{
+        console.log('Realtime update:', payload)
+        loadAll()
       })
       .subscribe()
-    return ()=>{ supabase.removeChannel(channel) }
+
+    const interval = setInterval(()=>{ loadAll() }, 3000)
+
+    return ()=>{
+      supabase.removeChannel(channel)
+      clearInterval(interval)
+    }
   },[])
 
   const selectedMenuData = useMemo(()=> menus.find(m=>m.id===selectedMenu),[menus,selectedMenu])
@@ -48,103 +53,40 @@ export default function KalkulatorOrder(){
     return selectedMenuData.recipes.reduce((s,r)=> s + Number(r.qty_per_porsi||0)*Number(r.inventory_items?.harga_baru||0),0)
   },[selectedMenuData])
   const totalHPP = hppPerPorsi * Number(porsi||0)
-  const hargaJual = Number(selectedMenuData?.harga_jual||25000) * Number(porsi||0)
-  const profit = hargaJual - totalHPP
 
-  async function handleBuatOrder(){
-    if(!selectedMenu){ alert('Pilih menu dulu Bos'); return }
-    const payload = {
-      menu_id: selectedMenu,
-      jumlah_porsi: Number(porsi),
-      customer_name: customer,
-      tanggal: tanggal,
-      status: 'Draft',
-      total_hpp: totalHPP,
-      total_jual: hargaJual,
-      profit: profit
-    }
-    const {data, error} = await supabase.from('orders').insert(payload).select().single()
-    if(error){ alert('Error: '+error.message); return }
-    alert(`✅ Order ${customer} - ${porsi} porsi dibuat! Lanjut ke Produksi`)
-    loadAll()
-    // Simpan ke localStorage juga biar history tidak hilang
-    const hist = JSON.parse(localStorage.getItem('sikitchen_history')||'[]')
-    hist.unshift({...data, menu_name: selectedMenuData?.name})
-    localStorage.setItem('sikitchen_history', JSON.stringify(hist.slice(0,50)))
-  }
-
-  async function handleRefresh(){ loadAll() }
-  function handleHapusLokal(){
-    if(confirm('Hapus history lokal? Data di Supabase tetap aman')){
-      localStorage.removeItem('sikitchen_history')
-      alert('History lokal dihapus')
-    }
-  }
-
-  if(loading) return <div className="p-6">Loading Kalkulator...</div>
+  if(loading) return <div className="p-6">Loading...</div>
 
   return (
-    <div className="p-2 md:p-5 space-y-4 bg-slate-50 min-h-screen" style={{fontFamily:'Inter, Arial, sans-serif'}}>
+    <div className="p-2 md:p-5 space-y-4 bg-slate-50 min-h-screen">
       <div className="bg-white p-4 rounded-2xl border shadow-sm flex justify-between items-center">
-        <div>
-          <div className="font-black text-[16px]">Kalkulator Order - Tahap 4 (Realtime Sync)</div>
-          <div className="text-[11px] text-slate-500">Daging rendang • {porsi} porsi • {inventory.length} bahan • Tombol Buat Order Sudah Berfungsi + Auto Sync CLOSED - Arial +2px</div>
-        </div>
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-1.5 rounded-full text-[11px] font-bold">{orders.length} History • {menus.length} Menu • {inventory.length} Bahan • Realtime ON 🟢</div>
-      </div>
-
-      <div className="bg-white p-4 rounded-2xl border shadow-sm grid md:grid-cols-3 gap-4">
-        <div>
-          <div className="text-[11px] font-bold mb-1">Pilih Menu ({menus.length})</div>
-          <select value={selectedMenu} onChange={e=>setSelectedMenu(e.target.value)} className="w-full border rounded-xl px-3 py-2.5 text-[12px]">
-            <option value="">▼ Pilih Menu - Daging rendang Rp {hppPerPorsi.toLocaleString('id-ID')} HPP</option>
-            {menus.map(m=>(
-              <option key={m.id} value={m.id}>{m.name} - Rp {m.harga_jual?.toLocaleString('id-ID')} Jual</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div className="text-[11px] font-bold mb-1">Jumlah Porsi</div>
-          <input type="number" value={porsi} onChange={e=>setPorsi(e.target.value)} className="w-full border rounded-xl px-3 py-2.5 text-[13px] font-bold"/>
-        </div>
-        <div className="space-y-2">
-          <div className="text-[11px] font-bold">Customer & Tanggal</div>
-          <input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="Nama Customer" className="w-full border rounded-xl px-3 py-2.5 text-[12px]"/>
-          <input type="date" value={tanggal} onChange={e=>setTanggal(e.target.value)} className="w-full border rounded-xl px-3 py-2.5 text-[12px]"/>
-          <button onClick={handleBuatOrder} className="w-full bg-[#0A1931] text-white py-2.5 rounded-xl text-[12px] font-black hover:bg-black">🛒 Buat Order - HPP Rp {totalHPP.toLocaleString('id-ID')} | Jual Rp {hargaJual.toLocaleString('id-ID')}</button>
-        </div>
+        <div><div className="font-black text-[16px]">Kalkulator Order - Tahap 4 (Realtime Sync v2 - Fix)</div><div className="text-[11px] text-slate-500">Auto sync CLOSED tiap 3 detik + Realtime • Last: {lastUpdate.toLocaleTimeString('id-ID')}</div></div>
+        <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-full text-[11px] font-bold">Realtime ON 🟢 • {orders.length} Order • Auto Refresh 3s</div>
       </div>
 
       <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
         <div className="p-3 flex justify-between items-center bg-slate-50 border-b">
-          <div className="font-bold text-[12px]">📋 History Order ({orders.length}) - Realtime Sync - Tidak Hilang! {orders.some(o=>o.status==='CLOSED') && <span className="bg-black text-white px-2 py-0.5 rounded-full text-[10px] ml-2">Ada CLOSED ✅</span>}</div>
-          <div className="flex gap-2">
-            <button onClick={handleHapusLokal} className="bg-red-500 text-white px-3 py-1 rounded-full text-[10px] font-bold">🗑️ Hapus Lokal</button>
-            <button onClick={handleRefresh} className="bg-blue-50 border px-3 py-1 rounded-full text-[10px] font-bold">🔄 Refresh</button>
-          </div>
+          <div className="font-bold text-[12px]">📋 History Order ({orders.length}) - Realtime Sync Fix {orders.filter(o=>o.status==='CLOSED').length>0 && <span className="bg-black text-white px-2 py-0.5 rounded-full ml-2">{orders.filter(o=>o.status==='CLOSED').length} CLOSED ✅</span>}</div>
+          <button onClick={loadAll} className="bg-blue-600 text-white px-4 py-1.5 rounded-full text-[11px] font-bold">🔄 Refresh Sekarang</button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[11px]">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr><th className="p-2.5 text-left">Tanggal</th><th className="p-2.5">Menu</th><th>Porsi</th><th>Customer</th><th>HPP</th><th>Jual</th><th>Profit</th><th>Status (Realtime)</th></tr>
-            </thead>
+            <thead className="bg-slate-50"><tr><th className="p-2.5 text-left">Tanggal</th><th>Menu</th><th>Porsi</th><th>Customer</th><th>HPP</th><th>Profit</th><th>Status Realtime</th></tr></thead>
             <tbody>
               {orders.map(o=>(
-                <tr key={o.id} className={`border-t hover:bg-slate-50 ${o.status==='CLOSED'?'bg-green-50':o.status==='Dikirim'?'bg-blue-50/50':''}`}>
-                  <td className="p-2.5">{new Date(o.created_at||o.tanggal).toLocaleDateString('id-ID')}</td>
-                  <td className="p-2.5 font-bold">{o.menus?.name||o.menu_name||'Daging rendang'}</td>
+                <tr key={o.id} className={`border-t ${o.status==='CLOSED'?'bg-black text-white':o.status==='Dikirim'?'bg-blue-50':''}`}>
+                  <td className="p-2.5">{new Date(o.created_at).toLocaleDateString('id-ID')}</td>
+                  <td className="p-2.5 font-bold">{o.menus?.name}</td>
                   <td className="p-2.5 text-center">{o.jumlah_porsi}</td>
                   <td className="p-2.5">{o.customer_name}</td>
-                  <td className="p-2.5">Rp {(o.total_hpp||totalHPP).toLocaleString('id-ID')}</td>
-                  <td className="p-2.5">Rp {(o.total_jual||hargaJual).toLocaleString('id-ID')}</td>
-                  <td className={`p-2.5 font-bold ${o.status==='CLOSED'?'text-green-700':'text-emerald-600'}`}>Rp {(o.profit||profit).toLocaleString('id-ID')}</td>
-                  <td className="p-2.5 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${o.status==='CLOSED'?'bg-black text-white':o.status==='Dikirim'?'bg-blue-100 text-blue-700':o.status==='Dikemas'?'bg-orange-100 text-orange-700':o.status==='Diproses'?'bg-yellow-100 text-yellow-700':'bg-slate-100'}`}>{o.status}</span></td>
+                  <td className="p-2.5">Rp {Number(o.total_hpp||0).toLocaleString('id-ID')}</td>
+                  <td className="p-2.5 font-bold text-green-600">Rp {Number(o.profit||0).toLocaleString('id-ID')}</td>
+                  <td className="p-2.5 text-center"><span className={`px-3 py-1 rounded-full font-black text-[10px] ${o.status==='CLOSED'?'bg-white text-black border':o.status==='Dikirim'?'bg-blue-600 text-white':o.status==='Dikemas'?'bg-orange-500 text-white':'bg-yellow-400 text-black'}`}>{o.status}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="p-2 bg-yellow-50 text-[10px] text-yellow-700 border-t">💡 Realtime: Kalau Delivery klik CLOSED, status di sini auto berubah jadi CLOSED hitam tanpa refresh. Kalau masih Dikirim, klik Refresh atau tunggu 2 detik.</div>
+        <div className="p-3 bg-black text-white text-[11px] rounded-b-2xl">✅ FIX: Sekarang Kalkulator auto refresh tiap 3 detik + Realtime. Jadi kalau di Delivery klik CLOSED, di sini dalam 3 detik otomatis jadi CLOSED putih di background hitam. Kalau belum berubah, klik Refresh Sekarang.</div>
       </div>
     </div>
   )
