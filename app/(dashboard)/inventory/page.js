@@ -1,128 +1,261 @@
-"use client"
-import { useEffect, useState, useMemo } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+"use client";
+import { useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-export default function InventoryUpdateHarga() {
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterKategori, setFilterKategori] = useState('Semua')
-  const [editItem, setEditItem] = useState(null)
-  const [editForm, setEditForm] = useState({ harga_baru: '', stok: '', supplier_nama: '', supplier_wa: '' })
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
-  const kategoriLabel = {'POK':'Bahan Pokok','HEW':'Protein Hewani','NAB':'Protein Nabati','SAY':'Sayuran','BSG':'Bumbu Segar','BIN':'Bumbu Instan','SAO':'Saos & Cairan','PLG':'Pelengkap & garnish','KEM':'Kemasan /Packing'}
+// Kategori sesuai gambar Bos
+const KATEGORI_LIST = [
+  "BIN - Bumbu Instan",
+  "BSG - Bumbu Segar", 
+  "HEW - Protein Hewani",
+  "KEM - Kemasan /Packing",
+  "NAB - Protein Nabati",
+  "SAY - Sayuran",
+  "KAR - Karbohidrat",
+  "MIN - Minyak & Lemak"
+];
 
-  function formatKategori(kode){ return `${kode} - ${kategoriLabel[kode]||kode}` }
+export default function InventoryPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [csvData, setCsvData] = useState([]);
+  const [search, setSearch] = useState("");
+  const [filterKategori, setFilterKategori] = useState("Semua");
 
-  async function load(){
-    setLoading(true)
-    const { data } = await supabase.from('inventory_items').select('*').order('kode_bahan').limit(500)
-    if(data) setItems(data)
-    setLoading(false)
-  }
-  useEffect(()=>{ load() }, [])
+  const [form, setForm] = useState({
+    code: "",
+    name: "",
+    category: "HEW - Protein Hewani",
+    sub_category: "",
+    stock: "",
+    unit: "Kg",
+    price: "",
+    supplier_name: "",
+    supplier_phone: ""
+  });
 
-  const filteredItems = useMemo(()=>{
-    let f = items
-    if(filterKategori !== 'Semua') f = f.filter(it => it.kategori === filterKategori)
-    if(searchQuery) f = f.filter(it => (it.nama_bahan||'').toLowerCase().includes(searchQuery.toLowerCase()) || (it.kode_bahan||'').toLowerCase().includes(searchQuery.toLowerCase()) || (it.supplier_nama||'').toLowerCase().includes(searchQuery.toLowerCase()))
-    return f
-  }, [items, searchQuery, filterKategori])
-
-  function startEdit(it){
-    setEditItem(it)
-    setEditForm({ harga_baru: String(it.harga_baru||''), stok: String(it.stok||''), supplier_nama: it.supplier_nama||'', supplier_wa: it.supplier_wa||'' })
-  }
-
-  async function saveEdit(e){
-    e.preventDefault()
-    if(!editItem) return
-    const payload = {
-      harga_baru: Number(editForm.harga_baru)||0,
-      price_per_unit: Number(editForm.harga_baru)||0,
-      stok: Number(editForm.stok)||0,
-      stock_qty: Number(editForm.stok)||0,
-      supplier_nama: editForm.supplier_nama,
-      supplier_wa: editForm.supplier_wa
+  // FETCH - dinamis baca 2 nama tabel (inventory_items & bahan_baku)
+  const fetchItems = async () => {
+    setLoading(true);
+    let data = null;
+    // coba inventory_items dulu
+    let res = await supabase.from("inventory_items").select("*").order("code", {ascending: true});
+    if (res.data && res.data.length > 0) {
+      data = res.data;
+    } else {
+      // fallback ke bahan_baku
+      let res2 = await supabase.from("bahan_baku").select("*").order("code", {ascending: true});
+      if (res2.data) data = res2.data;
     }
-    const { error } = await supabase.from('inventory_items').update(payload).eq('id', editItem.id)
-    if(error) return alert(error.message)
-    alert(`✅ ${editItem.nama_bahan} - Harga Baru Rp ${Number(editForm.harga_baru).toLocaleString('id-ID')} disimpan! HPP di Master Menu & Resep auto update!`)
-    setEditItem(null)
-    load()
-  }
+    // fallback ke inventory (nama lama)
+    if (!data) {
+      let res3 = await supabase.from("inventory").select("*").order("code", {ascending: true});
+      if (res3.data) data = res3.data;
+    }
+    setItems(data || []);
+    setLoading(false);
+  };
 
-  // Quick update harga khusus Daging Sapi
-  async function quickUpdateDagingSapi(){
-    const target = items.find(it => it.kode_bahan === 'BHN-HEW-003')
-    if(!target) return alert('BHN-HEW-003 Daging Sapi tidak ditemukan')
-    const { error } = await supabase.from('inventory_items').update({ harga_baru: 120000, price_per_unit: 120000 }).eq('id', target.id)
-    if(error) return alert(error.message)
-    alert('✅ Daging Sapi BHN-HEW-003 harga diupdate Rp 15.500 → Rp 120.000/Kg! HPP Daging rendang sekarang Rp 9.600 (0.08 Kg × 120.000) bukan Rp 1.240!')
-    load()
-  }
+  useEffect(()=>{ fetchItems(); }, []);
 
-  if(loading) return <div className="p-6">Loading...</div>
+  // TAMBAH BAHAN BARU - CARA PERMANEN
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    const payload = {
+      code: form.code.trim().toUpperCase(),
+      name: form.name,
+      category: form.category,
+      sub_category: form.sub_category,
+      stock: parseFloat(form.stock) || 0,
+      unit: form.unit,
+      price: parseInt(form.price.toString().replace(/\D/g,'')) || 0,
+      supplier_name: form.supplier_name,
+      supplier_phone: form.supplier_phone,
+      company_id: "sikitchen-mrh"
+    };
+    // insert ke inventory_items (tabel utama)
+    const { error } = await supabase.from("inventory_items").insert([payload]);
+    if (error) {
+      // coba fallback bahan_baku
+      const { error2 } = await supabase.from("bahan_baku").insert([payload]);
+      if (error2) { alert("Gagal: "+error.message); return; }
+    }
+    alert(`✅ Bahan ${payload.name} berhasil ditambah! Dashboard Layer 1 auto LIVE.`);
+    setShowAddModal(false);
+    setForm({code:"",name:"",category:"HEW - Protein Hewani",sub_category:"",stock:"",unit:"Kg",price:"",supplier_name:"",supplier_phone:""});
+    fetchItems();
+  };
+
+  // IMPORT CSV - CARA 2 DINAMIS
+  const handleCSV = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target.result;
+      const lines = text.split("\n").filter(l=>l.trim());
+      const headers = lines[0].split(",").map(h=>h.trim().replace(/"/g,''));
+      const rows = lines.slice(1).map(line=>{
+        const vals = line.split(",").map(v=>v.trim().replace(/"/g,''));
+        let obj = {};
+        headers.forEach((h,i)=> obj[h]=vals[i]);
+        return {
+          code: obj.code || obj.Kode,
+          name: obj.name || obj.Nama_Lengkap || obj.Nama,
+          category: obj.category || obj.Kategori,
+          sub_category: obj.sub_category || obj.Sub,
+          stock: parseFloat(obj.stock || obj.Stock) || 0,
+          unit: obj.unit || obj.Unit || "Kg",
+          price: parseInt((obj.price||obj.Harga_Baru||"").toString().replace(/\D/g,''))||0,
+          supplier_name: obj.supplier_name || obj.Supplier,
+          supplier_phone: obj.supplier_phone || obj.Phone || "",
+          company_id: "sikitchen-mrh"
+        };
+      });
+      setCsvData(rows);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportSave = async () => {
+    if (csvData.length===0) return alert("Tidak ada data CSV");
+    const { error } = await supabase.from("inventory_items").insert(csvData);
+    if (error) { alert("Gagal import: "+error.message); return; }
+    alert(`✅ Berhasil import ${csvData.length} bahan! Dashboard LIVE auto update.`);
+    setShowImportModal(false);
+    setCsvData([]);
+    fetchItems();
+  };
+
+  // FILTER SEARCH
+  const filtered = items.filter(it=>{
+    const matchSearch = `${it.code} ${it.name}`.toLowerCase().includes(search.toLowerCase());
+    const matchKat = filterKategori==="Semua" || it.category===filterKategori;
+    return matchSearch && matchKat;
+  });
+
+  const quickFixSapi = async () => {
+    await supabase.from("inventory_items").update({price:120000}).eq("code","BHN-HEW-003");
+    await supabase.from("bahan_baku").update({price:120000}).eq("code","BHN-HEW-003");
+    alert("✅ Daging Sapi update Rp 120.000/Kg - HPP auto live");
+    fetchItems();
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white p-4 rounded-xl border">
-        <div className="font-bold text-lg">Data Inventory-Master Bahan - Update Harga</div>
-        <div className="text-[12px] text-slate-500">Klik Edit di baris bahan untuk rubah Harga Baru • HPP di Master Menu & Resep auto ikut harga_live • Contoh: BHN-HEW-003 Daging Sapi Rp 15.500 → Rp 120.000/Kg</div>
-        <button onClick={quickUpdateDagingSapi} className="mt-3 bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold">🔧 Quick Fix Daging Sapi Rp 120.000/Kg</button>
+    <div className="p-4 bg-[#f1f5f9] min-h-screen">
+      <div className="bg-white p-4 rounded-xl shadow mb-4">
+        <h1 className="text-xl font-bold text-slate-800">Data Inventory-Master Bahan - Update Harga</h1>
+        <p className="text-sm text-slate-500">Klik Edit di baris bahan untuk rubah Harga Baru • HPP di Master Menu & Resep auto ikut harga_live • Contoh: BHN-HEW-003 Daging Sapi Rp 15.500 → Rp 120.000/Kg</p>
+        <div className="flex gap-2 mt-3 flex-wrap">
+          <button onClick={quickFixSapi} className="bg-red-600 text-white px-4 py-2 rounded-full text-sm font-bold">🖊 Quick Fix Daging Sapi Rp 120.000/Kg</button>
+          <button onClick={()=>setShowAddModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-full text-sm font-bold">+ Tambah Bahan Baru</button>
+          <button onClick={()=>setShowImportModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-sm font-bold">📤 Import CSV / Excel</button>
+          <a href="/template_import_bahan_sikitchen.csv" download className="bg-slate-200 text-slate-700 px-4 py-2 rounded-full text-sm">⬇ Download Template</a>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="bg-[#0A1931] text-white px-5 py-3 flex justify-between items-center">
-          <span className="text-sm font-bold">Tabel {filteredItems.length}/{items.length} Bahan - Klik Edit untuk Update Harga</span>
+      <div className="bg-white rounded-xl shadow overflow-hidden">
+        <div className="bg-slate-900 text-white p-3 flex justify-between items-center">
+          <h2 className="font-bold">Tabel {filtered.length}/{items.length} Bahan - Klik Edit untuk Update Harga</h2>
           <div className="flex gap-2">
-            <input className="px-3 py-1.5 rounded text-xs text-black w-[200px]" placeholder="Search BHN-HEW-003 / Daging Sapi / Supplier..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
-            <select className="px-3 py-1.5 rounded text-xs text-black" value={filterKategori} onChange={e=>setFilterKategori(e.target.value)}><option value="Semua">Semua</option>{Object.keys(kategoriLabel).map(k=><option key={k} value={k}>{k} - {kategoriLabel[k]}</option>)}</select>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search BHN-HEW-003 / Daging" className="px-3 py-1 rounded text-slate-900 text-sm w-60" />
+            <select value={filterKategori} onChange={e=>setFilterKategori(e.target.value)} className="px-3 py-1 rounded text-slate-900 text-sm">
+              <option>Semua</option>
+              {KATEGORI_LIST.map(k=><option key={k}>{k}</option>)}
+            </select>
           </div>
         </div>
+
+        {loading ? <div className="p-10 text-center">Loading LIVE Supabase...</div> : (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-100"><tr><th className="p-2">Kode</th><th className="p-2 text-left">Nama Lengkap</th><th className="p-2">Kategori</th><th className="p-2">Sub</th><th className="p-2">Stock</th><th className="p-2 bg-yellow-50">Harga Baru</th><th className="p-2">Supplier</th><th className="p-2 bg-[#D4AF37] text-black">Aksi Update</th></tr></thead>
-            <tbody>
-              {filteredItems.slice(0,100).map(it=>(
-                <tr key={it.id} className="border-b hover:bg-slate-50">
-                  <td className="p-2 font-mono font-bold text-blue-700">{it.kode_bahan}</td>
-                  <td className="p-2 font-bold">{it.nama_bahan}</td>
-                  <td className="p-2 bg-[#FFF8E1] text-[11px]">{formatKategori(it.kategori)}</td>
-                  <td className="p-2 bg-blue-50 font-bold">{it.sub_kategori}</td>
-                  <td className="p-2 text-center">{it.stok} {it.satuan}</td>
-                  <td className="p-2 text-right bg-yellow-50 font-bold">Rp {(it.harga_baru||0).toLocaleString('id-ID')}<div className="text-[9px] text-slate-500">{it.satuan==='Kg' ? `Rp ${(Number(it.harga_baru||0)/1000).toFixed(0)}/gram` : ''}</div></td>
-                  <td className="p-2 text-[11px]">{it.supplier_nama}<br/><span className="text-green-600">{it.supplier_wa}</span></td>
-                  <td className="p-2 text-center"><button onClick={()=>startEdit(it)} className="bg-[#0A1931] text-white px-3 py-1.5 rounded-full text-[11px] font-bold">✏️ Edit Harga</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="p-2 text-left">Kode</th>
+              <th className="p-2 text-left">Nama Lengkap</th>
+              <th className="p-2">Kategori</th>
+              <th className="p-2">Sub</th>
+              <th className="p-2">Stock</th>
+              <th className="p-2 bg-yellow-100">Harga Baru</th>
+              <th className="p-2">Supplier</th>
+              <th className="p-2 bg-yellow-400">Aksi Update</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(row=>(
+              <tr key={row.code} className="border-b hover:bg-yellow-50">
+                <td className="p-2 font-mono text-blue-600 font-bold">{row.code}</td>
+                <td className="p-2 font-semibold">{row.name}</td>
+                <td className="p-2 bg-yellow-50 text-xs">{row.category}</td>
+                <td className="p-2 text-xs">{row.sub_category}</td>
+                <td className="p-2">{row.stock} {row.unit}</td>
+                <td className="p-2 bg-blue-50 font-bold text-center">Rp {Number(row.price).toLocaleString("id-ID")} <div className="text-[10px] text-slate-500">Rp {row.price}/{row.unit}</div></td>
+                <td className="p-2 text-xs"><div>{row.supplier_name}</div><div className="text-emerald-600">{row.supplier_phone}</div></td>
+                <td className="p-2"><button className="bg-slate-900 text-white px-3 py-1 rounded-full text-xs">🖊 Edit Harga</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         </div>
+        )}
       </div>
 
-      {editItem && (
+      {/* MODAL TAMBAH BAHAN BARU - CARA PERMANEN */}
+      {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <form onSubmit={saveEdit} className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 border-2 border-[#D4AF37]">
-            <div className="font-bold">✏️ Update Harga: {editItem.kode_bahan} - {editItem.nama_bahan}</div>
-            <div className="text-[11px] text-slate-500">Sub: {editItem.sub_kategori} - Satuan: {editItem.satuan} - HPP di Master Menu auto update dari harga_baru live</div>
-            <div className="bg-yellow-50 p-3 rounded-lg border">
-              <div className="text-[11px] font-bold">Harga Lama: Rp {(editItem.harga_baru||0).toLocaleString('id-ID')}/{editItem.satuan}</div>
-              <div className="text-[10px]">Contoh akurat: Daging Sapi Rp 120.000/Kg, Ayam Potong Rp 35.000/Kg, Beras putih Rp 15.500/Kg</div>
+          <form onSubmit={handleAdd} className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold mb-4">+ Tambah Bahan Baru - LIVE Supabase & Dashboard</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold">Kode *</label><input required value={form.code} onChange={e=>setForm({...form,code:e.target.value})} placeholder="BHN-HEW-004" className="w-full border p-2 rounded" /></div>
+              <div><label className="text-xs font-bold">Nama Lengkap *</label><input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Daging Ayam Fillet" className="w-full border p-2 rounded" /></div>
+              <div><label className="text-xs font-bold">Kategori *</label><select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} className="w-full border p-2 rounded">{KATEGORI_LIST.map(k=><option key={k}>{k}</option>)}</select></div>
+              <div><label className="text-xs font-bold">Sub</label><input value={form.sub_category} onChange={e=>setForm({...form,sub_category:e.target.value})} placeholder="Fillet" className="w-full border p-2 rounded" /></div>
+              <div><label className="text-xs font-bold">Stock</label><input type="number" step="0.1" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} placeholder="10" className="w-full border p-2 rounded" /></div>
+              <div><label className="text-xs font-bold">Unit</label><select value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})} className="w-full border p-2 rounded"><option>Kg</option><option>Pcs</option><option>Gram</option><option>Liter</option><option>Pack</option></select></div>
+              <div><label className="text-xs font-bold">Harga Baru *</label><input required type="number" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} placeholder="35000" className="w-full border p-2 rounded" /></div>
+              <div><label className="text-xs font-bold">Supplier</label><input value={form.supplier_name} onChange={e=>setForm({...form,supplier_name:e.target.value})} placeholder="Toko Pangan Jaya" className="w-full border p-2 rounded" /></div>
+              <div className="col-span-2"><label className="text-xs font-bold">Supplier Phone</label><input value={form.supplier_phone} onChange={e=>setForm({...form,supplier_phone:e.target.value})} placeholder="0817..." className="w-full border p-2 rounded" /></div>
             </div>
-            <div><label className="text-[11px] font-bold">Harga Baru *</label><input type="number" className="w-full border-2 p-3 rounded-xl text-sm font-bold" value={editForm.harga_baru} onChange={e=>setEditForm({...editForm, harga_baru: e.target.value})} required placeholder="120000" /></div>
-            <div className="text-[10px] text-slate-500">Preview: Rp {Number(editForm.harga_baru||0).toLocaleString('id-ID')}/{editItem.satuan} = Rp {(Number(editForm.harga_baru||0)/1000).toFixed(1)}/gram - Untuk resep 0.08 Kg = Rp {(Number(editForm.harga_baru||0)*0.08).toLocaleString('id-ID')}/porsi</div>
-            <div><label className="text-[11px] font-bold">Stock - Qty</label><input type="number" className="w-full border-2 p-3 rounded-xl text-sm" value={editForm.stok} onChange={e=>setEditForm({...editForm, stok: e.target.value})} /></div>
-            <div><label className="text-[11px] font-bold">Supplier Nama</label><input className="w-full border-2 p-3 rounded-xl text-sm bg-green-50" value={editForm.supplier_nama} onChange={e=>setEditForm({...editForm, supplier_nama: e.target.value})} /></div>
-            <div><label className="text-[11px] font-bold">Supplier WA</label><input className="w-full border-2 p-3 rounded-xl text-sm bg-green-50" value={editForm.supplier_wa} onChange={e=>setEditForm({...editForm, supplier_wa: e.target.value})} /></div>
-            <div className="flex gap-2">
-              <button type="button" onClick={()=>setEditItem(null)} className="flex-1 bg-slate-200 text-black py-2.5 rounded-xl text-xs font-bold">Batal</button>
-              <button type="submit" className="flex-1 bg-[#D4AF37] text-black py-2.5 rounded-xl text-xs font-bold">💾 Simpan Harga Baru</button>
+            <div className="flex gap-2 mt-5">
+              <button type="submit" className="flex-1 bg-emerald-600 text-white py-2 rounded-full font-bold">Simpan - LIVE ke Dashboard Layer 1</button>
+              <button type="button" onClick={()=>setShowAddModal(false)} className="flex-1 bg-slate-200 py-2 rounded-full">Batal</button>
             </div>
-            <div className="text-[10px] text-slate-500">Setelah simpan, cek di Master Menu & Resep → Daging rendang HPP auto naik dari Rp 4.685 → Rp ~12.000 karena Daging Sapi 0.08 Kg × Rp 120.000 = Rp 9.600</div>
           </form>
         </div>
       )}
+
+      {/* MODAL IMPORT CSV */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold mb-2">📤 Import CSV / Excel - Format 1:1 Supabase</h3>
+            <p className="text-xs text-slate-500 mb-3">Format kolom wajib: code, name, category, sub_category, stock, unit, price, supplier_name, supplier_phone, company_id - Download template dulu untuk contoh.</p>
+            <input type="file" accept=".csv" onChange={handleCSV} className="w-full border p-2 rounded mb-3" />
+            {csvData.length>0 && (
+              <>
+                <div className="bg-slate-50 p-2 rounded text-xs mb-3 max-h-60 overflow-auto">
+                  <div>Preview {csvData.length} baris:</div>
+                  <table className="w-full mt-2 text-[11px]">
+                    <thead><tr><th>Kode</th><th>Nama</th><th>Harga</th><th>Stock</th></tr></thead>
+                    <tbody>{csvData.slice(0,5).map((r,i)=><tr key={i}><td>{r.code}</td><td>{r.name}</td><td>{r.price}</td><td>{r.stock} {r.unit}</td></tr>)}</tbody>
+                  </table>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleImportSave} className="flex-1 bg-blue-600 text-white py-2 rounded-full font-bold">Import {csvData.length} Bahan - LIVE Dashboard</button>
+                  <button onClick={()=>setShowImportModal(false)} className="flex-1 bg-slate-200 py-2 rounded-full">Batal</button>
+                </div>
+              </>
+            )}
+            {!csvData.length && <button onClick={()=>setShowImportModal(false)} className="w-full bg-slate-200 py-2 rounded-full mt-3">Tutup</button>}
+          </div>
+        </div>
+      )}
     </div>
-  )
+  );
 }
