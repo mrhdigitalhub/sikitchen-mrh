@@ -1,119 +1,95 @@
 "use client"
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
 
-export default function LoginGeneralPage() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [perusahaan, setPerusahaan] = useState('SIKITCHEN')
-  const [loading, setLoading] = useState(false)
-  const [msg, setMsg] = useState('')
+const ROLES = [
+  { id:'admin', label:'Admin', icon:'📊', color:'border-blue-500', bg:'bg-blue-600', user:'admin', pass:'admin123', desc:'Akses Penuh Semua Modul', akses:['Dashboard','Inventori 16 bahan','Master Menu','Kalkulator Order','Produksi 7 Phase','Delivery 2 tombol'] },
+  { id:'owner', label:'Owner', icon:'👑', color:'border-purple-500', bg:'bg-purple-600', user:'owner', pass:'owner123', desc:'Monitoring Profit & Laporan Read-Only', akses:['Dashboard Read-Only','Laporan Profit Rp 95.550','Order Aktif & CLOSED'] },
+  { id:'produksi', label:'Produksi', icon:'👨‍🍳', color:'border-red-500', bg:'bg-red-600', user:'produksi', pass:'dapur123', desc:'Kalkulator (Read) + Produksi 7 Phase + QC', akses:['Kalkulator Read','Phase 1-4 Checklist','Tombol Proses Produksi → Diproses','QC → Next Delivery → Dikemas'] },
+  { id:'delivery', label:'Delivery', icon:'🚚', color:'border-emerald-500', bg:'bg-emerald-600', user:'delivery', pass:'kurir123', desc:'Hanya Delivery - 2 Tombol DIKIRIM & CLOSED', akses:['DAFTAR DELIVERY','DIKIRIM → indikator 3 biru','CLOSED → indikator 4 hitam'] },
+]
+
+export default function LoginPage(){
   const router = useRouter()
+  const [selectedRole,setSelectedRole]=useState('admin')
+  const [username,setUsername]=useState('admin')
+  const [password,setPassword]=useState('admin123')
+  const [error,setError]=useState('')
 
-  useEffect(() => {
-    // cek sudah login
-    const saved = localStorage.getItem('sikitchen_session')
-    if (saved) {
-      router.push('/dashboard')
-    }
-  }, [])
+  const role = ROLES.find(r=>r.id===selectedRole)
 
-  async function handleLogin(e) {
-    e.preventDefault()
-    setLoading(true)
-    setMsg('')
-    try {
-      // LOGIN GENERAL - tanpa email, cek di profiles table langsung
-      const { data, error } = await supabase.from('profiles').select('*').eq('username', username).eq('password_plain', password).single()
-      
-      if (error || !data) {
-        setMsg('Username atau password salah! Coba: admin/admin123, owner/owner123, dapur/dapur123, delivery/delivery123')
-        setLoading(false)
-        return
-      }
-
-      // Simpan session di localStorage (general, bukan supabase auth)
-      localStorage.setItem('sikitchen_session', JSON.stringify({
-        id: data.id,
-        username: data.username,
-        role: data.role,
-        nama_lengkap: data.nama_lengkap,
-        email: data.email,
-        perusahaan: data.perusahaan || perusahaan,
-        login_at: new Date().toISOString()
-      }))
-
-      router.push('/dashboard')
-    } catch (err) {
-      setMsg(err.message)
-    } finally {
-      setLoading(false)
-    }
+  function handleSelectRole(r){
+    setSelectedRole(r.id)
+    setUsername(r.user)
+    setPassword(r.pass)
+    setError('')
   }
 
-  async function handleBuatAkunGeneral() {
-    setLoading(true)
-    setMsg('Membuat 4 akun general...')
-    // Insert 4 akun general via SQL - sudah ada file tahap3_general_login.sql tapi kita coba via client juga
-    const accounts = [
-      { username: 'admin', password_plain: 'admin123', role: 'admin', nama_lengkap: 'Admin', email: 'admin@sikitchen.local' },
-      { username: 'owner', password_plain: 'owner123', role: 'owner', nama_lengkap: 'Owner', email: 'owner@sikitchen.local' },
-      { username: 'dapur', password_plain: 'dapur123', role: 'kepala_dapur', nama_lengkap: 'Kepala Dapur', email: 'dapur@sikitchen.local' },
-      { username: 'delivery', password_plain: 'delivery123', role: 'delivery', nama_lengkap: 'Kurir Delivery', email: 'delivery@sikitchen.local' },
-    ]
-    
-    for (const acc of accounts) {
-      const { error } = await supabase.from('profiles').upsert({
-        username: acc.username,
-        password_plain: acc.password_plain,
-        role: acc.role,
-        nama_lengkap: acc.nama_lengkap,
-        email: acc.email,
-        perusahaan: perusahaan
-      }, { onConflict: 'username' })
+  function handleLogin(){
+    const r = ROLES.find(x=>x.user===username && x.pass===password)
+    if(!r){
+      setError('Username / Password salah Bos! Cek kartu role di atas')
+      return
     }
-    
-    setLoading(false)
-    setMsg('4 akun general dibuat! Login: admin/admin123, owner/owner123, dapur/dapur123, delivery/delivery123 - Tidak pakai email!')
+    // Set cookie & localStorage untuk middleware & layout
+    document.cookie = `sikitchen_role=${r.id}; path=/; max-age=86400`
+    document.cookie = `sikitchen_user=${r.user}; path=/; max-age=86400`
+    localStorage.setItem('sikitchen_role', r.id)
+    localStorage.setItem('sikitchen_user', r.user)
+    localStorage.setItem('sikitchen_login_at', new Date().toISOString())
+
+    if(r.id==='admin') router.push('/dashboard')
+    else if(r.id==='owner') router.push('/dashboard?role=owner')
+    else if(r.id==='produksi') router.push('/production')
+    else if(r.id==='delivery') router.push('/delivery')
   }
 
   return (
-    <div className="min-h-screen bg-navy flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-navy">SIKITCHEN - Login General</h1>
-        <p className="text-sm text-slate-500 mb-1">Tahap 3 - 4 Role - Tanpa Email (Multi Perusahaan)</p>
-        <p className="text-[11px] text-slate-400 mb-6">Login pakai username saja - bisa dipakai banyak perusahaan</p>
-        
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="text-xs text-slate-500">Perusahaan / Cabang</label>
-            <input className="w-full border p-3 rounded-xl mt-1" placeholder="Nama perusahaan - misal SIKITCHEN, CATERING A, dll" value={perusahaan} onChange={e=>setPerusahaan(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500">Username</label>
-            <input className="w-full border p-3 rounded-xl mt-1" placeholder="Username - misal admin, owner, dapur, delivery" value={username} onChange={e=>setUsername(e.target.value)} required />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500">Password</label>
-            <input className="w-full border p-3 rounded-xl mt-1" placeholder="Password" type="password" value={password} onChange={e=>setPassword(e.target.value)} required />
-          </div>
-          <button type="submit" disabled={loading} className="w-full bg-navy text-white py-3 rounded-xl font-semibold">{loading?'Loading...':'Login'}</button>
-        </form>
+    <div className="min-h-screen bg-[#0A1931] flex items-center justify-center p-3" style={{fontFamily:'Inter, Arial, sans-serif'}}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden">
+        <div className="bg-[#0A1931] text-white p-6 flex justify-between items-center">
+          <div><div className="font-black text-[22px] tracking-wider">SIKITCHEN</div><div className="text-[11px] text-yellow-400 tracking-widest">CATERING OS v1.0 - Tahap 3 RBAC</div></div>
+          <div className="text-[10px] text-slate-400">VS Code + Next.js + Vercel</div>
+        </div>
 
-        {msg && <div className="mt-4 p-3 bg-slate-100 rounded-xl text-xs text-slate-700 whitespace-pre-line">{msg}</div>}
-
-        <div className="mt-6 border-t pt-4">
-          <p className="text-xs text-slate-500 mb-2">Belum ada akun general? Buat 4 akun:</p>
-          <button onClick={handleBuatAkunGeneral} disabled={loading} className="w-full bg-gold text-navy py-2 rounded-xl text-sm font-semibold">Buat 4 Akun General (Username)</button>
-          <div className="mt-3 text-[11px] text-slate-500 space-y-1 bg-slate-50 p-3 rounded-xl">
-            <div className="font-semibold">Akun General (Tanpa Email):</div>
-            <div><b>admin</b> / admin123 - Full CRUD + Kelola Kategori</div>
-            <div><b>owner</b> / owner123 - Monitoring + Approve Harga + Profit</div>
-            <div><b>dapur</b> / dapur123 - Produksi + Resep + Pakai Stok</div>
-            <div><b>delivery</b> / delivery123 - Diproses→Dikemas→Dikirim→CLOSED</div>
-            <div className="mt-2 text-[10px]">Bisa tambah user baru di Dashboard Admin nanti!</div>
+        <div className="p-6 grid md:grid-cols-2 gap-6">
+          <div>
+            <div className="font-black text-[14px] mb-3">Pilih Role untuk Login</div>
+            <div className="grid grid-cols-2 gap-3">
+              {ROLES.map(r=>(
+                <div key={r.id} onClick={()=>handleSelectRole(r)} className={`border-l-4 ${r.color} border-t border-r border-b rounded-2xl p-3 cursor-pointer transition hover:shadow-md ${selectedRole===r.id?'bg-slate-50 shadow-md ring-1 ring-slate-200':''}`}>
+                  <div className="flex justify-between"><span className="text-[18px]">{r.icon}</span>{selectedRole===r.id && <span className="w-2 h-2 bg-green-500 rounded-full"></span>}</div>
+                  <div className="font-black text-[12px] mt-1">{r.label}</div>
+                  <div className="text-[10px] text-slate-500 mt-1 leading-tight">{r.desc}</div>
+                  <div className="text-[9px] mt-2 bg-slate-100 px-2 py-1 rounded-full inline-block">{r.user} / {r.pass}</div>
+                  <div className="text-[9px] text-slate-400 mt-2">{r.akses.slice(0,2).join(' • ')}</div>
+                </div>
+              ))}
+            </div>
           </div>
+
+          <div className="bg-slate-50 rounded-2xl p-5 border">
+            <div className="font-bold text-[13px] mb-4 flex items-center gap-2"><span className="text-[16px]">{role.icon}</span> Login sebagai {role.label} <span className={`ml-auto px-2 py-0.5 rounded-full text-white text-[9px] ${role.bg}`}>{role.id.toUpperCase()}</span></div>
+            
+            <div className="space-y-3">
+              <div><div className="text-[11px] font-bold mb-1">Username</div><input value={username} onChange={e=>setUsername(e.target.value)} className="w-full border rounded-xl px-3 py-2.5 text-[13px] bg-white" placeholder="admin"/></div>
+              <div><div className="text-[11px] font-bold mb-1">Password</div><input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full border rounded-xl px-3 py-2.5 text-[13px] bg-white" placeholder="••••••"/></div>
+              
+              {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-[11px]">{error}</div>}
+
+              <div className="bg-white border rounded-xl p-3 text-[10px] leading-relaxed">
+                <div className="font-bold mb-1">Hak Akses {role.label}:</div>
+                {role.akses.map((a,i)=><div key={i} className="flex gap-1"><span>•</span><span>{a}</span></div>)}
+              </div>
+
+              <button onClick={handleLogin} className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-black py-3 rounded-xl text-[13px] shadow">🔐 Login {role.label}</button>
+              <div className="text-[10px] text-slate-400 text-center">Cookie + localStorage → middleware cek role → redirect sesuai role</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 px-6 py-3 text-[10px] text-slate-400 border-t flex justify-between">
+          <span>Tahap 3 RBAC - Admin Owner Produksi Delivery - 4 Role Berbeda</span><span>sikitchen-mrh.vercel.app/login</span>
         </div>
       </div>
     </div>
