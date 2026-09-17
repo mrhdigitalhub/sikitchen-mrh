@@ -193,15 +193,19 @@ export default function ProduksiTahap5() {
               )}
 
               <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl">
-                <div className="font-bold" style={{fontSize:'14px'}}>📋 Checklist Produksi {selectedOrder.menus?.name} - {selectedOrder.jumlah_porsi} porsi - {selectedOrder.customer_name}</div>
+                <div className="font-bold" style={{fontSize:'14px'}}>📋 Checklist Produksi {selectedOrder.menus?.name} - {selectedOrder.jumlah_porsi} porsi - {selectedOrder.customer_name} ({produksiDetail?.kebutuhan?.length||0} bahan real dari Resep)</div>
                 <div className="grid md:grid-cols-2 gap-2 mt-2" style={{fontSize:'13px'}}>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Siapkan Beras {selectedOrder.jumlah_porsi} porsi × 0.1 Kg = {(0.1*Number(selectedOrder.jumlah_porsi)).toFixed(1)} Kg</div>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Siapkan Daging Sapi {selectedOrder.jumlah_porsi} × 0.08 Kg = {(0.08*Number(selectedOrder.jumlah_porsi)).toFixed(2)} Kg rendang</div>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Siapkan Bumbu (kunyit, bawang merah, cabe, dll) 7 bahan</div>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Masak Nasi + Rendang + Capcay + Pelengkap</div>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Packing Nasi Kotak {selectedOrder.jumlah_porsi} box</div>
-                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Quality Check - Siap Delivery ke {selectedOrder.customer_name}</div>
+                  {produksiDetail?.kebutuhan?.map((k,i)=>(
+                    <div key={i} className="bg-white p-2 rounded border flex items-start gap-2">
+                      <input type="checkbox" className="mt-1" />
+                      <span>Siapkan {k.inventory_items?.nama_bahan} {selectedOrder.jumlah_porsi} × {k.qtyPerPorsi} {k.inventory_items?.satuan} = <b>{k.totalQty.toFixed(3)} {k.inventory_items?.satuan}</b> ({k.inventory_items?.kode_bahan})</span>
+                    </div>
+                  ))}
+                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Masak {selectedOrder.menus?.name} + Nasi + Pelengkap</div>
+                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Packing {selectedOrder.menus?.name} {selectedOrder.jumlah_porsi} box ({selectedOrder.customer_name})</div>
+                  <div className="bg-white p-2 rounded border"><input type="checkbox" /> Quality Check - Siap Delivery ke {selectedOrder.customer_name} - {selectedOrder.tanggal_order}</div>
                 </div>
+                <div className="text-[11px] text-slate-500 mt-2">✅ Fix: Checklist sekarang ambil real 7 bahan dari tabel Kebutuhan di atas, bukan hardcode bumbu kunyit/bawang merah!</div>
               </div>
             </>
           )}
