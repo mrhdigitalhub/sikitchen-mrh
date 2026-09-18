@@ -1,0 +1,47 @@
+{
+  "version": "V1.0 - 18-09-2026",
+  "description": "MASTER RULES Sikitchen OS - Semua aturan dinamis Bos, Muse WAJIB baca ini sebelum ngoding apapun",
+  "last_updated": "2026-09-18",
+  "CORE_NEVER_BREAK": [
+    "DB inventory_items HANYA kirim kolom yang ada: kode_bahan, name, nama_bahan, kategori, stok, harga_beli, id_halal_19, custom_value_1, kode_prefix, satuan. JANGAN PERNAH kirim kategori_utama, kode, stock, harga, harga_baru, custom_value_2, kode_lama, unit - bikin error schema cache",
+    "INSERT wajib kirim name DAN nama_bahan (keduanya) biar tidak error null constraint",
+    "UPDATE pakai eq(kode_bahan) fallback eq(id) kalau gagal",
+    "ID Halal pakai kolom id_halal_19 SAJA. custom_value_2 JANGAN dipakai untuk halal",
+    "Merek pakai custom_value_1",
+    "Sidebar HARUS fixed left-0 top-0 bottom-0 w-64, tidak ikut scroll. Main content md:pl-64 yang scroll. JANGAN pakai html,body overflow:hidden",
+    "Sidebar HARUS ada tombol Logout merah di bawah + tulisan versi V15.x + menu Admin Master A,B,C jangan hilang",
+    "Edit bahan lama HARUS bisa ganti: Prefix Hall/Orgk, Kode Kategori (HEWANI jadi DAGING bisa), Merek, id_halal_19, stock, harga",
+    "Push pakai PowerShell: copy ... -Force; git add .; git commit -m ...; git push - 1 baris"
+  ],
+  "DYNAMIC_RULES": [
+    {
+      "id": "R001",
+      "fitur": "Inventory",
+      "aturan": "Bisa ganti kode HEWANI-001 jadi DAGING-001 via Edit Kode - dropdown Kode Kategori",
+      "status": "active",
+      "tanggal": "2026-09-18"
+    },
+    {
+      "id": "R002",
+      "fitur": "Inventory",
+      "aturan": "Tambah General Next Kode otomatis: BERAS-012, BOX-009 dll",
+      "status": "active",
+      "tanggal": "2026-09-18"
+    },
+    {
+      "id": "R003",
+      "fitur": "Sidebar",
+      "aturan": "Sidebar statis tidak ikut scroll, inventory bisa scroll normal",
+      "status": "active",
+      "tanggal": "2026-09-18"
+    },
+    {
+      "id": "R004",
+      "fitur": "Auth",
+      "aturan": "Tombol Logout wajib ada di sidebar bawah dan topbar mobile",
+      "status": "active",
+      "tanggal": "2026-09-18"
+    }
+  ],
+  "WORKFLOW_WAJIB_MUSE": "Sebelum ngoding apapun, BACA file ini dulu. Sebelum push, CEK apakah melanggar CORE_NEVER_BREAK. Kalau Bos bilang 'tambahin rules', update file ini dulu baru ngoding."
+}
