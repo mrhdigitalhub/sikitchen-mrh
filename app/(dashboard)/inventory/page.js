@@ -15,14 +15,9 @@ const MAP_KODE_KE_UTAMA = {
   "SUSU":"Bahan Susu","FERMENTASI":"Bahan Fermentasi Alami","MINYAK":"Bahan Minyak dan Lemak","BUBUK":"Bahan Bumbu Instan",
   "SAYURAN":"Bahan Sayuran","BUAH":"Bahan Buah Segar","PENYEDAP":"Bahan Penyedap Rasa","REMPAH":"Bahan Rempah Alami","KERUPUK":"Bahan Pelengkap"
 };
-
-// FIX MAPPING NAMA KE KODE ASLI EXCEL - JANGAN PAKAI HNS LAGI!
 const MAP_NAMA_KE_KODE_FIX = {
   "Ikan Tuna":"IKAN","Ikan Salmon":"IKAN","Ikan Gurame":"IKAN","Ikan Bandeng":"IKAN",
-  "Udang Vaname":"UDANG","Udang Windu":"UDANG",
-  "Cumi Sotong":"CUMI","Cumi Cumi":"CUMI",
-  "Telur Puyuh":"TELUR","Telur Ayam":"TELUR","Telur Bebek":"TELUR",
-  "Sosis Ayam":"TELUR","Nugget Ayam":"TELUR","Bakso Sapi":"TELUR","Bakso Ikan":"TELUR","Kornet":"TELUR"
+  "Udang Vaname":"UDANG","Cumi Sotong":"CUMI","Telur Puyuh":"TELUR","Sosis Ayam":"TELUR","Nugget Ayam":"TELUR","Bakso Sapi":"TELUR","Bakso Ikan":"TELUR","Kornet":"TELUR"
 };
 
 export default function InventoryPage(){
@@ -53,18 +48,14 @@ export default function InventoryPage(){
       const withNo = data.map((d,i)=> {
         let rawKode = (d.kode_bahan||"").split("-")[0].toUpperCase();
         let kodeFix = rawKode;
-        // FIX HNS SALAH -> BALIK KE 18 KODE ASLI
         if(rawKode==="HNS" || rawKode==="H"){
-          // Cek nama bahan untuk mapping balik ke IKAN/UDANG/CUMI/TELUR
           const nama = d.nama_bahan||"";
-          kodeFix = MAP_NAMA_KE_KODE_FIX[nama] || "IKAN"; // default IKAN kalau tidak ketemu
-          // Lebih spesifik: jika nama mengandung kata
+          kodeFix = MAP_NAMA_KE_KODE_FIX[nama] || "IKAN";
           if(nama.toLowerCase().includes("ikan")) kodeFix="IKAN";
           else if(nama.toLowerCase().includes("udang")) kodeFix="UDANG";
           else if(nama.toLowerCase().includes("cumi")) kodeFix="CUMI";
           else if(nama.toLowerCase().includes("telur") || nama.toLowerCase().includes("sosis") || nama.toLowerCase().includes("nugget") || nama.toLowerCase().includes("bakso") || nama.toLowerCase().includes("kornet")) kodeFix="TELUR";
         }
-        // Fix kode lama SAUS, LAUK, LAIN, KEMASAN, AYAM, SAYUR, BUMBU, KEJU
         if(["SAUS","LAUK","LAIN","KEMASAN","AYAM","SAYUR","BUMBU","KEJU"].includes(rawKode)){
           if(rawKode==="SAUS") kodeFix="PENYEDAP"; else if(rawKode==="LAUK") kodeFix="DAGING"; else if(rawKode==="LAIN") kodeFix="KERUPUK"; else if(rawKode==="KEMASAN") kodeFix="BOX"; else if(rawKode==="AYAM") kodeFix="DAGING"; else if(rawKode==="SAYUR") kodeFix="SAYURAN"; else if(rawKode==="BUMBU") kodeFix="BUBUK"; else if(rawKode==="KEJU") kodeFix="SUSU";
         }
@@ -91,6 +82,7 @@ export default function InventoryPage(){
   },{});
 
   function handleClickNama(item){ setQuick(item); setQuickStock(""); setQuickHarga(String(item.harga_beli||0)); }
+  
   async function handleUpdate(){
     if(!quick) return;
     const tambah = Number(quickStock||0);
@@ -106,6 +98,17 @@ export default function InventoryPage(){
     setItems(items.map(it=> it.kode_bahan===quick.kode_bahan ? {...it, stok: stockBaruTotal, stock: stockBaruTotal, harga_beli: hargaBaruInput, harga_baru: hargaBaruInput, selisih: selisihBaru } : it));
     setQuick(null);
   }
+
+  // FIX DELETE SAMPAH BALIK - LOGIC SAMA
+  async function handleDelete(item){
+    if(!confirm(`Hapus ${item._kode_tampil} - ${item.nama_bahan} ?\nNo Global ${String(item._no).padStart(3,"0")} akan hilang permanen.`)) return;
+    const { error } = await supabase.from("inventory_items").delete().eq("kode_bahan", item.kode_bahan);
+    if(error){ alert("Gagal hapus: "+error.message); return; }
+    alert(`Berhasil hapus ${item._kode_tampil} - ${item.nama_bahan} 🗑️`);
+    setItems(items.filter(it=> it.kode_bahan!==item.kode_bahan));
+    if(quick && quick.kode_bahan===item.kode_bahan) setQuick(null);
+  }
+
   function handleBukaSemua(){ const exp = {}; Object.keys(grouped).forEach(k=> exp[k]=true); setExpanded(exp); }
   function handleTutupSemua(){ const exp = {}; Object.keys(grouped).forEach(k=> exp[k]=false); setExpanded(exp); }
   async function handleRefresh(){ setLoading(true); await loadData(); setShowTambah(false); setQuick(null); }
@@ -131,7 +134,7 @@ export default function InventoryPage(){
       const payload = { kode_bahan: newKode, nama_bahan: newNama.trim(), kategori: newKategoriUtama, stok: tambahStock, stock: tambahStock, harga_beli: hargaBaruInput, harga_baru: hargaBaruInput, selisih: 0, satuan: "Kg" };
       const { error } = await supabase.from("inventory_items").insert(payload);
       if(error){ alert("Gagal: "+error.message); return; }
-      alert(`Berhasil tambah baru ${newKode} - ${newKategoriUtama} - FIX 18 Kode, bukan HNS`);
+      alert(`Berhasil tambah baru ${newKode} - ${newKategoriUtama} - FIX 18 Kode`);
     }
     setShowTambah(false); setNewNama(""); await loadData();
   }
@@ -139,8 +142,8 @@ export default function InventoryPage(){
   return (
     <div className="p-4 bg-[#f5f7fb] min-h-screen">
       <div className="bg-slate-900 text-white p-4 rounded-t-xl">
-        <div className="text-lg font-bold">Master Bahan Sikitchen - V12.6 FIX 18 Kode Bukan HNS - 15 Kategori Tetap</div>
-        <div className="text-xs text-slate-300">Live: {items.length} bahan • FIX: HNS-001 → IKAN-001, UDANG-001, CUMI-001, TELUR-001 (18 Kode Excel Asli) • 15 Kategori Utama tetap • No Global tetap • Stock 10+5=15 tetap</div>
+        <div className="text-lg font-bold">Master Bahan Sikitchen - V12.7 FIX Ikon Sampah Balik 🗑️ - 18 Kode Bukan HNS</div>
+        <div className="text-xs text-slate-300">Live: {items.length} bahan • FIX: Tombol Delete 🗑️ balik + Edit • HNS-001 → IKAN-001, UDANG-001, CUMI-001, TELUR-001 • 15 Kategori Utama • No Global tetap • Stock 10+5=15</div>
         <div className="mt-3 flex gap-2 flex-wrap">
           <button onClick={handleTambahBahan} className="bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm font-bold border-2 border-white">+ Tambah Bahan General (Next: {newKode} No {String(nextNoForKode).padStart(3,"0")})</button>
           <button onClick={handleBukaSemua} className="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded text-sm">Buka Semua</button>
@@ -152,17 +155,16 @@ export default function InventoryPage(){
 
       {showTambah && (
         <div className="bg-white border-2 border-green-500 p-4 rounded-xl my-3 shadow">
-          <div className="font-bold text-sm mb-2 text-green-700">✅ FIX 18 Kode - Pilih IKAN/UDANG/CUMI/TELUR, Bukan HNS Lagi</div>
+          <div className="font-bold text-sm mb-2 text-green-700">✅ FIX 18 Kode + Ikon Sampah 🗑️ Balik</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <div className="bg-yellow-50 border border-yellow-300 p-2 rounded">
-              <div className="text-xs font-semibold">Kode Kategori Excel (18) - FIX Bukan HNS</div>
+              <div className="text-xs font-semibold">Kode Kategori Excel (18)</div>
               <select value={newKodeKat} onChange={e=> setNewKodeKat(e.target.value)} className="w-full p-2 border-2 border-blue-400 rounded text-sm font-bold">
                 {KODE_KATEGORI_18.map(k=><option key={k} value={k}>{k} - {MAP_KODE_KE_UTAMA[k]} - Next {k}-{String(items.filter(i=>i._kode_fix===k).length+1).padStart(3,"0")}</option>)}
               </select>
-              <div className="text-[10px] text-red-600 mt-1 font-bold">JANGAN PAKAI HNS! Pakai IKAN, UDANG, CUMI, TELUR (4 kode di 1 kategori utama)</div>
             </div>
             <div className="bg-blue-50 border border-blue-300 p-2 rounded">
-              <div className="text-xs font-semibold">Kode Bahan Auto FIX 18 Kode</div>
+              <div className="text-xs font-semibold">Kode Bahan Auto</div>
               <input value={newKode} disabled className="w-full p-2 border-2 border-green-400 rounded text-sm font-mono font-bold bg-green-50" />
             </div>
             <div><div className="text-xs font-semibold">Nama Bahan *</div><input value={newNama} onChange={e=>setNewNama(e.target.value)} placeholder="Ex: Ikan Tuna" className="w-full p-2 border-2 border-green-300 rounded text-sm" /></div>
@@ -170,23 +172,27 @@ export default function InventoryPage(){
               <div className="text-xs font-semibold">Kategori Utama (15) Auto</div>
               <input value={newKategoriUtama} disabled className="w-full p-2 border rounded text-sm bg-white font-bold" />
             </div>
-            <div className="bg-blue-50 border-2 border-blue-400 p-2 rounded"><div className="text-xs font-semibold">Stock Awal (10+5=15 tetap)</div><input type="number" value={newStock} onChange={e=>setNewStock(e.target.value)} className="w-full p-2 border rounded text-sm font-bold" /></div>
-            <div className="bg-yellow-50 border-2 border-yellow-400 p-2 rounded"><div className="text-xs font-semibold">Harga Beli (Selisih Baru-Lama)</div><input type="number" value={newHarga} onChange={e=>setNewHarga(e.target.value)} className="w-full p-2 border rounded text-sm font-bold bg-yellow-50" /></div>
+            <div className="bg-blue-50 border-2 border-blue-400 p-2 rounded"><div className="text-xs font-semibold">Stock Awal (10+5=15)</div><input type="number" value={newStock} onChange={e=>setNewStock(e.target.value)} className="w-full p-2 border rounded text-sm font-bold" /></div>
+            <div className="bg-yellow-50 border-2 border-yellow-400 p-2 rounded"><div className="text-xs font-semibold">Harga Beli</div><input type="number" value={newHarga} onChange={e=>setNewHarga(e.target.value)} className="w-full p-2 border rounded text-sm font-bold bg-yellow-50" /></div>
           </div>
-          <div className="mt-3 flex gap-2"><button onClick={handleSimpanTambah} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">Simpan - {newKode} - {newKategoriUtama} - FIX 18 Kode</button><button onClick={()=>setShowTambah(false)} className="px-6 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-3 flex gap-2"><button onClick={handleSimpanTambah} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">Simpan - {newKode} - {newKategoriUtama}</button><button onClick={()=>setShowTambah(false)} className="px-6 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
       {quick && (
         <div className="bg-green-50 border-2 border-green-200 p-4 rounded-xl my-3">
-          <div className="font-bold text-green-800 text-sm">🛠️ Update Cepat: {quick._kode_tampil} - {quick._utama}</div>
+          <div className="font-bold text-green-800 text-sm">🛠️ Update Cepat: {quick._kode_tampil} - {quick._utama} - No {String(quick._no).padStart(3,"0")}</div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-2">
             <div><div className="text-xs">Nama</div><input value={quick.nama_bahan} disabled className="w-full p-2 border rounded bg-white text-sm" /></div>
             <div><div className="text-xs">Kode FIX 18</div><input value={quick._kode_fix} disabled className="w-full p-2 border rounded bg-white text-sm font-bold" /></div>
-            <div><div className="text-xs">Stock Tambah</div><input type="number" value={quickStock} onChange={e=>setQuickStock(e.target.value)} className="w-full p-2 border-2 border-blue-400 rounded text-sm" /></div>
-            <div><div className="text-xs">Harga Baru</div><input type="number" value={quickHarga} onChange={e=>setQuickHarga(e.target.value)} className="w-full p-2 border-2 border-yellow-400 rounded text-sm bg-yellow-50" /></div>
+            <div><div className="text-xs">Stock Tambah {Number(quick.stok||0)}+{quickStock||0}={Number(quick.stok||0)+Number(quickStock||0)}</div><input type="number" value={quickStock} onChange={e=>setQuickStock(e.target.value)} className="w-full p-2 border-2 border-blue-400 rounded text-sm" /></div>
+            <div><div className="text-xs">Harga Baru Selisih {Number(quickHarga||0)-Number(quick.harga_beli||0)}</div><input type="number" value={quickHarga} onChange={e=>setQuickHarga(e.target.value)} className="w-full p-2 border-2 border-yellow-400 rounded text-sm bg-yellow-50" /></div>
           </div>
-          <div className="mt-3 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 text-white py-2 rounded font-bold text-sm">Update {Number(quick.stok||0)}+{quickStock||0}={Number(quick.stok||0)+Number(quickStock||0)}</button><button onClick={()=>setQuick(null)} className="px-4 py-2 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={handleUpdate} className="flex-1 bg-green-600 text-white py-2 rounded font-bold text-sm">Update Stock & Harga</button>
+            <button onClick={()=>handleDelete(quick)} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-bold">🗑️ Delete</button>
+            <button onClick={()=>setQuick(null)} className="px-4 py-2 bg-gray-200 rounded text-sm">Batal</button>
+          </div>
         </div>
       )}
 
@@ -203,17 +209,20 @@ export default function InventoryPage(){
               {isOpen && (
                 <div className="overflow-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-white text-xs"><tr><th className="text-left p-2">No Global</th><th className="text-left p-2">Kode Bahan FIX 18 Kode (Bukan HNS)</th><th className="text-left p-2">Nama Bahan</th><th className="text-left p-2">Kategori Utama</th><th className="text-left p-2">Stock</th><th className="text-left p-2">Harga</th><th className="text-left p-2">Aksi</th></tr></thead>
+                    <thead className="bg-white text-xs"><tr><th className="text-left p-2">No Global</th><th className="text-left p-2">Kode Bahan FIX 18 Kode</th><th className="text-left p-2">Nama Bahan (klik cepat)</th><th className="text-left p-2">Kategori Utama</th><th className="text-left p-2">Stock</th><th className="text-left p-2">Harga</th><th className="text-left p-2">Aksi</th></tr></thead>
                     <tbody>
                       {list.map(it=>(
                         <tr key={it.kode_bahan} className="border-t hover:bg-blue-50">
                           <td className="p-2 text-xs">{String(it._no).padStart(3,"0")}</td>
-                          <td className="p-2 font-mono text-xs font-bold">{it._kode_tampil} <span className="text-[9px] text-gray-400">({it.kode_bahan})</span></td>
+                          <td className="p-2 font-mono text-xs font-bold">{it._kode_tampil}</td>
                           <td className="p-2 font-semibold cursor-pointer" onClick={()=>handleClickNama(it)}>{it.nama_bahan} <span className="text-[10px] text-blue-600">↗ klik</span></td>
                           <td className="p-2 text-[11px]">{it._utama}</td>
                           <td className="p-2"><span className="bg-blue-100 px-2 py-1 rounded-full text-xs">{it.stok}</span></td>
                           <td className="p-2 text-xs">Rp {Number(it.harga_beli||0).toLocaleString("id-ID")}</td>
-                          <td className="p-2"><button onClick={()=>handleClickNama(it)} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">Edit</button></td>
+                          <td className="p-2 flex gap-1">
+                            <button onClick={()=>handleClickNama(it)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs font-bold">Edit</button>
+                            <button onClick={()=>handleDelete(it)} className="bg-red-100 hover:bg-red-200 text-red-600 px-2 py-1 rounded text-xs font-bold">🗑️ Delete</button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
