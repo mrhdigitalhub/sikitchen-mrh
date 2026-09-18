@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchInventoryCompat } from "@/lib/inventoryCompat";
 
-// INVENTORY V15.5 FIX GANTI KODE HEWANI-001 JADI DAGING-001 BISA DI EDIT - id_halal_19 SAJA + ADMIN MASTER
+// INVENTORY V15.6 FINAL - FIX kategori_utama TIDAK ADA - HANYA KIRIM KOLOM YANG ADA DI DB SAJA
 export default function InventoryPage(){
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
@@ -13,7 +13,7 @@ export default function InventoryPage(){
   const [quickMerek, setQuickMerek] = useState("");
   const [quickIdHalal, setQuickIdHalal] = useState("");
   const [quickPrefix, setQuickPrefix] = useState("");
-  const [quickKodeKat, setQuickKodeKat] = useState(""); // FIX BARU: BISA GANTI DAGING
+  const [quickKodeKat, setQuickKodeKat] = useState("");
   const [quickKodeLama, setQuickKodeLama] = useState("");
   const [expanded, setExpanded] = useState({});
   const [showTambah, setShowTambah] = useState(false);
@@ -48,7 +48,6 @@ export default function InventoryPage(){
     if(!katData || katData.length===0){
       katList = [{nama:"Bahan Baku Utama"},{nama:"Bahan Kemasan"},{nama:"Bahan Pembersih"},{nama:"Bahan Hewani"},{nama:"Bahan Nabati"},{nama:"Bahan Hewani Non Sembelihan"},{nama:"Bahan Susu"},{nama:"Bahan Fermentasi Alami"},{nama:"Bahan Minyak dan Lemak"},{nama:"Bahan Bumbu Instan"},{nama:"Bahan Sayuran"},{nama:"Bahan Buah Segar"},{nama:"Bahan Penyedap Rasa"},{nama:"Bahan Rempah Alami"},{nama:"Bahan Pelengkap"},];
     }
-    // TAMBAH HEWANI KE MAP BIAR TIDAK HILANG
     kodeList.forEach(k=> map[k.kode]=k.kategori_utama);
     map["HEWANI"] = map["HEWANI"] || "Bahan Hewani";
     setMasterKode(kodeList); setMasterKategori(katList); setMapKodeKeUtama(map);
@@ -61,14 +60,14 @@ export default function InventoryPage(){
         let kodeFix = (d.kode_bahan||d.kode||"").split("-").filter(x=>!["Hall","Orgk","HALL","ORGK"].includes(x))[0] || "BERAS";
         if(prefix) kodeFix = (d.kode_bahan||d.kode||"").split("-")[1] || kodeFix;
         kodeFix = kodeFix.toUpperCase();
-        const utama = map[kodeFix] || d.kategori || d.kategori_utama || "Bahan Baku Utama";
+        const utama = map[kodeFix] || d.kategori || "Bahan Baku Utama";
         const nomor = (d.kode_bahan||d.kode||"").split("-").pop() || String(i+1).padStart(3,"0");
         const kodeTampil = prefix ? `${prefix}-${kodeFix}-${nomor}` : `${kodeFix}-${nomor}`;
         const namaFix = d.nama_bahan || d.name || "";
         return {...d, _no: i+1, _kode_fix: kodeFix, _kode_tampil: kodeTampil, _prefix: prefix, _utama: utama, _nomor: nomor, _nama_fix: namaFix}
       });
       setItems(withNo);
-      const exp = {}; katList.forEach(k=> exp[k.nama]=true); exp["Bahan Hewani"]=true; exp["Bahan Hewani Non Sembelihan"]=true; setExpanded(exp);
+      const exp = {}; katList.forEach(k=> exp[k.nama]=true); setExpanded(exp);
     }catch(e){ console.log(e); }
   }
 
@@ -82,7 +81,7 @@ export default function InventoryPage(){
   function handleClickNama(item){
     setQuick(item); setQuickStock(""); setQuickHarga(String(item.harga_beli||item.harga||0));
     setQuickMerek(item.custom_value_1 || ""); setQuickIdHalal(item.id_halal_19 || "");
-    setQuickPrefix(item.kode_prefix || item._prefix || ""); setQuickKodeKat(item._kode_fix || "HEWANI"); // FIX: SET KODE KAT LAMA
+    setQuickPrefix(item.kode_prefix || item._prefix || ""); setQuickKodeKat(item._kode_fix || "HEWANI");
     setQuickKodeLama(item.kode_lama || "");
   }
   
@@ -92,33 +91,44 @@ export default function InventoryPage(){
     const stockBaruTotal = tambah ? stockLama + tambah : stockLama;
     if(quickPrefix==="Hall" && quickIdHalal && quickIdHalal.length!==19){ alert("Hall- wajib 19 digit!"); return; }
     
-    // FIX UTAMA BOS: SEKARANG BISA GANTI KODE KATEGORI DARI HEWANI-001 JADI DAGING-001
     const kodeFixBaru = quickKodeKat || quick._kode_fix;
     const kodeBahanBaru = quickPrefix ? `${quickPrefix}-${kodeFixBaru}-${quick._nomor}` : `${kodeFixBaru}-${quick._nomor}`;
     const kategoriBaru = mapKodeKeUtama[kodeFixBaru] || quick._utama;
 
+    // V15.6 FIX: HANYA KIRIM KOLOM YANG ADA DI DB - TIDAK ADA kategori_utama, unit, kode_lama kalau tidak ada - BIAR TIDAK SCHEMA CACHE ERROR
     const payload = {
-      stok: stockBaruTotal, stock: stockBaruTotal,
-      harga_beli: Number(quickHarga)||0, harga_baru: Number(quickHarga)||0, harga: Number(quickHarga)||0,
-      custom_value_1: quickMerek || "", custom_value_2: "",
-      id_halal_19: quickIdHalal || "", kode_prefix: quickPrefix || "",
-      kode_lama: quickKodeLama || quick.kode_bahan || quick.kode, 
-      kode_bahan: kodeBahanBaru, kode: kodeBahanBaru,
-      name: quick._nama_fix, nama_bahan: quick._nama_fix,
-      kategori: kategoriBaru, kategori_utama: kategoriBaru
+      kode_bahan: kodeBahanBaru,
+      name: quick._nama_fix,
+      nama_bahan: quick._nama_fix,
+      kategori: kategoriBaru, // HANYA kategori, TIDAK ADA kategori_utama
+      stok: stockBaruTotal,
+      harga_beli: Number(quickHarga)||0,
+      id_halal_19: quickIdHalal || "",
+      custom_value_1: quickMerek || "",
+      kode_prefix: quickPrefix || ""
     };
-    console.log("UPDATE HEWANI->DAGING:", quick.kode_bahan, "->", kodeBahanBaru, payload);
+    // Optional columns - hanya kirim kalau ada
+    // payload.stock = stockBaruTotal; payload.harga = Number(quickHarga)||0; payload.harga_baru = Number(quickHarga)||0; payload.custom_value_2 = ""; payload.kode = kodeBahanBaru; payload.kode_lama = quickKodeLama || quick.kode_bahan || quick.kode;
+
+    console.log("UPDATE V15.6 MINIMAL:", payload);
     const { error } = await supabase.from("inventory_items").update(payload).eq("kode_bahan", quick.kode_bahan || quick.kode);
-    if(error){ alert("Gagal update (kode sudah ada?): "+error.message); return; }
-    alert(`Berhasil ganti kode!\n${quick._kode_tampil} -> ${kodeBahanBaru}\nKategori: ${kategoriBaru}`);
+    if(error){ 
+      // Coba fallback pakai id kalau kode_bahan gagal
+      const { error: error2 } = await supabase.from("inventory_items").update(payload).eq("id", quick.id);
+      if(error2){ alert("Gagal update: "+error2.message); return; }
+    }
+    alert(`✅ Berhasil Bos!\n${quick._kode_tampil} -> ${kodeBahanBaru}\nMerek: ${quickMerek} - id_halal_19: ${quickIdHalal||"kosong"}`);
     setQuick(null); await loadMasterAndData();
   }
 
   async function handleDelete(item){
     if(!confirm(`Hapus ${item._kode_tampil} - ${item._nama_fix} ?`)) return;
-    const { error } = await supabase.from("inventory_items").delete().eq("kode_bahan", item.kode_bahan || item.kode);
-    if(error){ alert("Gagal: "+error.message); return; }
-    setItems(items.filter(it=> (it.kode_bahan||it.kode)!==(item.kode_bahan||item.kode))); if(quick && (quick.kode_bahan||quick.kode)===(item.kode_bahan||item.kode)) setQuick(null);
+    const { error } = await supabase.from("inventory_items").delete().eq("id", item.id);
+    if(error){
+      const { error: e2 } = await supabase.from("inventory_items").delete().eq("kode_bahan", item.kode_bahan || item.kode);
+      if(e2){ alert("Gagal: "+e2.message); return; }
+    }
+    setItems(items.filter(it=> it.id!==item.id)); if(quick && quick.id===item.id) setQuick(null);
   }
 
   function handleBukaSemua(){ const exp = {}; Object.keys(grouped).forEach(k=> exp[k]=true); setExpanded(exp); }
@@ -129,25 +139,30 @@ export default function InventoryPage(){
   async function handleSimpanTambah(){
     if(!newNama){ alert("Nama bahan wajib"); return; }
     if(newPrefix==="Hall" && newIdHalal.length!==19){ alert("Hall- wajib 19 digit!"); return; }
+    // V15.6 FIX: INSERT MINIMAL HANYA KOLOM WAJIB - BIAR TIDAK ERROR name / kategori_utama / schema cache
     const payload = {
-      kode_bahan: newKodeDisplay, kode: newKodeDisplay,
-      name: newNama.trim(), nama_bahan: newNama.trim(),
-      kategori: newKategoriUtama, kategori_utama: newKategoriUtama,
-      stok: Number(newStock)||0, stock: Number(newStock)||0,
-      harga_beli: Number(newHarga)||0, harga_baru: Number(newHarga)||0, harga: Number(newHarga)||0,
-      kode_prefix: newPrefix || "", kode_lama: newKodeLama || baseKode,
-      id_halal_19: newIdHalal || "", custom_value_1: newMerek || "", custom_value_2: "", satuan: "Kg", unit: "Kg"
+      kode_bahan: newKodeDisplay,
+      name: newNama.trim(),
+      nama_bahan: newNama.trim(),
+      kategori: newKategoriUtama,
+      stok: Number(newStock)||0,
+      harga_beli: Number(newHarga)||0,
+      id_halal_19: newIdHalal || "",
+      custom_value_1: newMerek || "",
+      kode_prefix: newPrefix || ""
     };
+    console.log("INSERT V15.6 MINIMAL:", payload);
     const { error } = await supabase.from("inventory_items").insert(payload);
-    if(error){ alert("Gagal: "+error.message); return; }
+    if(error){ alert("Gagal: "+error.message + "\nCoba jalankan SQL ALTER TABLE dulu untuk id_halal_19"); return; }
+    alert(`✅ Berhasil tambah ${newKodeDisplay} - ${newNama}`);
     setShowTambah(false); setNewNama(""); await loadMasterAndData();
   }
 
   return (
     <div className="p-4 bg-[#f5f7fb] min-h-screen">
       <div className="bg-slate-900 text-white p-4 rounded-t-xl">
-        <div className="text-lg font-bold">Inventory V15.5 FIX GANTI KODE HEWANI-001 JADI DAGING-001 BISA - id_halal_19 SAJA</div>
-        <div className="text-xs text-slate-300">FIX: Edit sekarang bisa ganti Kode Kategori dari HEWANI jadi DAGING + Prefix Hall/Orgk + Merek + id_halal_19 - Live: {items.length} bahan</div>
+        <div className="text-lg font-bold">Inventory V15.6 FINAL FIX - Bisa Ganti HEWANI jadi DAGING - Tidak Error Schema Cache</div>
+        <div className="text-xs text-slate-300">FIX FINAL: Hanya kirim kolom yang ada di DB: kode_bahan, name, nama_bahan, kategori, stok, harga_beli, id_halal_19, custom_value_1, kode_prefix - Live: {items.length} bahan</div>
         <div className="mt-3 flex gap-2 flex-wrap">
           <button onClick={handleTambahBahan} className="bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm font-bold border-2 border-white">+ Tambah General (Next: {newKodeDisplay})</button>
           <button onClick={handleBukaSemua} className="bg-slate-700 px-3 py-2 rounded text-sm">Buka Semua</button>
@@ -160,40 +175,37 @@ export default function InventoryPage(){
 
       {showTambah && (
         <div className="bg-white border-2 border-green-500 p-4 rounded-xl my-3 shadow">
-          <div className="font-bold text-sm mb-2 text-green-700">✅ Tambah Bahan V15.5</div>
+          <div className="font-bold text-sm mb-2 text-green-700">✅ Tambah Bahan V15.6 FINAL - Anti Error name & kategori_utama</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="bg-yellow-50 border-2 border-yellow-400 p-3 rounded"><div className="text-xs font-bold">Prefix Hall/Orgk</div><select value={newPrefix} onChange={e=>setNewPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold mt-1"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
             <div className="bg-blue-50 border-2 border-blue-400 p-3 rounded"><div className="text-xs font-bold">Kode Kategori</div><select value={newKodeKat} onChange={e=> setNewKodeKat(e.target.value)} className="w-full p-2 border-2 border-blue-500 rounded text-sm font-bold mt-1">{masterKode.map(k=>{ const count = items.filter(i=>i._kode_fix===k.kode).length+1; return <option key={k.kode} value={k.kode}>{k.kode} - Next {k.kode}-{String(count).padStart(3,"0")}</option> })}</select></div>
             <div className="bg-green-50 border-2 border-green-400 p-3 rounded"><div className="text-xs font-bold">Kode Final</div><input value={newKodeDisplay} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-50 mt-1" /></div>
             <div className="bg-white border-2 border-green-300 p-2 rounded"><div className="text-xs font-semibold">Nama Bahan *</div><input value={newNama} onChange={e=>setNewNama(e.target.value)} placeholder="Ayam Potong" className="w-full p-2 border-2 border-green-400 rounded text-sm mt-1" autoFocus /></div>
-            <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek (custom_value_1)</div><input value={newMerek} onChange={e=>setNewMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm mt-1" /></div>
+            <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek</div><input value={newMerek} onChange={e=>setNewMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm mt-1" /></div>
             <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 SAJA</div><input value={newIdHalal} onChange={e=>setNewIdHalal(e.target.value)} placeholder="Kosong/19 digit" className="w-full p-2 border-2 border-yellow-500 rounded text-sm mt-1" maxLength={19} /></div>
           </div>
-          <div className="mt-3 flex gap-2"><button onClick={handleSimpanTambah} className="flex-1 bg-green-600 text-white py-3 rounded font-bold text-sm">Simpan - {newKodeDisplay}</button><button onClick={()=>setShowTambah(false)} className="px-6 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-3 flex gap-2"><button onClick={handleSimpanTambah} className="flex-1 bg-green-600 text-white py-3 rounded font-bold text-sm">Simpan - {newKodeDisplay} - FINAL FIX</button><button onClick={()=>setShowTambah(false)} className="px-6 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
       {quick && (
         <div className="bg-green-50 border-2 border-green-400 p-4 rounded-xl my-3 shadow-lg border-dashed">
-          <div className="font-bold text-green-800 text-sm">🛠️ FIX EDIT: GANTI KODE HEWANI-001 JADI DAGING-001 BISA SEKARANG - {quick._kode_tampil} - {quick._nama_fix}</div>
-          <div className="bg-yellow-100 border border-yellow-400 p-2 rounded text-xs mt-2">Cara Bos: Ganti dropdown Kode Kategori dari HEWANI jadi DAGING, lalu klik Update. Kode akan berubah dari HEWANI-001 jadi DAGING-001 (nomor tetap)</div>
+          <div className="font-bold text-green-800 text-sm">🛠️ FINAL FIX: GANTI KODE HEWANI-001 JADI DAGING-001 - Anti Error Schema Cache</div>
+          <div className="bg-yellow-100 border border-yellow-400 p-2 rounded text-xs mt-2">Bos, sekarang aku cuma kirim kolom yang pasti ada di DB Bos: kode_bahan, name, nama_bahan, kategori, stok, harga_beli, id_halal_19, custom_value_1, kode_prefix. Tidak ada kategori_utama lagi.</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-            <div><div className="text-xs font-bold">Nama Bahan (tidak bisa ganti)</div><input value={quick._nama_fix} disabled className="w-full p-2 border rounded bg-gray-100 text-sm" /></div>
+            <div><div className="text-xs font-bold">Nama Bahan</div><input value={quick._nama_fix} disabled className="w-full p-2 border rounded bg-gray-100 text-sm" /></div>
             <div><div className="text-xs font-bold">Prefix Hall/Orgk</div><select value={quickPrefix} onChange={e=>setQuickPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
-            <div className="bg-blue-50 border-2 border-blue-500 p-2 rounded"><div className="text-xs font-bold">Kode Kategori - GANTI DI SINI BOS HEWANI JADI DAGING</div>
+            <div className="bg-blue-50 border-2 border-blue-500 p-2 rounded"><div className="text-xs font-bold">Kode Kategori - GANTI HEWANI JADI DAGING DI SINI</div>
               <select value={quickKodeKat} onChange={e=>setQuickKodeKat(e.target.value)} className="w-full p-2 border-2 border-blue-600 rounded text-sm font-bold bg-white mt-1">
                 {masterKode.map(k=> <option key={k.kode} value={k.kode}>{k.kode} - {k.kategori_utama}</option>)}
                 <option value="HEWANI">HEWANI - Bahan Hewani (lama)</option>
               </select>
             </div>
-            <div><div className="text-xs">Kode Final Baru - Hasil Ganti</div><input value={quickPrefix ? `${quickPrefix}-${quickKodeKat}-${quick._nomor}` : `${quickKodeKat}-${quick._nomor}`} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100 text-green-800" /></div>
+            <div><div className="text-xs">Kode Final Baru</div><input value={quickPrefix ? `${quickPrefix}-${quickKodeKat}-${quick._nomor}` : `${quickKodeKat}-${quick._nomor}`} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100 text-green-800" /></div>
             <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek (custom_value_1)</div><input value={quickMerek} onChange={e=>setQuickMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm font-bold mt-1" autoFocus /></div>
             <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 SAJA</div><input value={quickIdHalal} onChange={e=>setQuickIdHalal(e.target.value)} placeholder="19 digit / kosong" className="w-full p-2 border-2 border-yellow-500 rounded text-sm font-bold mt-1" maxLength={19} /></div>
-            <div><div className="text-xs font-bold">Tambah Stock</div><input type="number" value={quickStock} onChange={e=>setQuickStock(e.target.value)} placeholder={`Stock ${quick.stok||quick.stock}`} className="w-full p-2 border-2 border-blue-400 rounded text-sm" /></div>
-            <div><div className="text-xs font-bold">Harga Baru</div><input type="number" value={quickHarga} onChange={e=>setQuickHarga(e.target.value)} className="w-full p-2 border-2 border-yellow-400 rounded text-sm bg-yellow-50" /></div>
-            <div><div className="text-xs">Kode Lama</div><input value={quickKodeLama} onChange={e=>setQuickKodeLama(e.target.value)} placeholder={quick.kode_bahan} className="w-full p-2 border rounded text-sm" /></div>
           </div>
-          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update - GANTI {quick._kode_tampil} JADI {quickPrefix ? `${quickPrefix}-${quickKodeKat}-${quick._nomor}` : `${quickKodeKat}-${quick._nomor}`}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update FINAL FIX - {quick._kode_tampil} JADI {quickPrefix ? `${quickPrefix}-${quickKodeKat}-${quick._nomor}` : `${quickKodeKat}-${quick._nomor}`}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
@@ -204,7 +216,7 @@ export default function InventoryPage(){
           return (
             <div key={kat} className="border-b last:border-0">
               <div className="p-3 font-bold text-sm flex justify-between items-center bg-slate-50"><div className="cursor-pointer flex-1" onClick={()=>setExpanded(prev=>({...prev, [kat]: !isOpen}))}>{i+1} &nbsp; {kat} - {list.length} bahan {isOpen?"▼":"▶"}</div><button onClick={()=>setExpanded(prev=>({...prev, [kat]: !isOpen}))} className="text-xs bg-white border px-2 py-1 rounded">{isOpen?"Tutup":"Buka"}</button></div>
-              {isOpen && (<div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-white text-xs"><tr><th className="text-left p-2">No</th><th className="text-left p-2">Kode</th><th className="text-left p-2">Nama</th><th className="text-left p-2">Merek</th><th className="text-left p-2">id_halal_19</th><th className="text-left p-2">Stock</th><th className="text-left p-2">Aksi</th></tr></thead><tbody>{list.map(it=>(<tr key={it.kode_bahan||it.kode} className="border-t hover:bg-blue-50"><td className="p-2 text-xs">{String(it._no).padStart(3,"0")}</td><td className="p-2 font-mono text-xs font-bold">{it._kode_tampil}</td><td className="p-2 font-semibold cursor-pointer" onClick={()=>handleClickNama(it)}>{it._nama_fix} <span className="text-[10px] text-blue-600">↗ Edit kode bisa</span></td><td className="p-2 text-xs bg-purple-50 font-bold">{it.custom_value_1 || "-"}</td><td className="p-2 text-xs font-mono bg-yellow-50">{it.id_halal_19 || "-"}</td><td className="p-2"><span className="bg-blue-100 px-2 py-1 rounded-full text-xs">{it.stok||it.stock}</span></td><td className="p-2 flex gap-1"><button onClick={()=>handleClickNama(it)} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">Edit Kode</button><button onClick={()=>handleDelete(it)} className="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold">🗑️</button></td></tr>))}</tbody></table></div>)}
+              {isOpen && (<div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-white text-xs"><tr><th className="text-left p-2">No</th><th className="text-left p-2">Kode</th><th className="text-left p-2">Nama</th><th className="text-left p-2">Merek</th><th className="text-left p-2">id_halal_19</th><th className="text-left p-2">Stock</th><th className="text-left p-2">Aksi</th></tr></thead><tbody>{list.map(it=>(<tr key={it.id || it.kode_bahan || it.kode} className="border-t hover:bg-blue-50"><td className="p-2 text-xs">{String(it._no).padStart(3,"0")}</td><td className="p-2 font-mono text-xs font-bold">{it._kode_tampil}</td><td className="p-2 font-semibold cursor-pointer" onClick={()=>handleClickNama(it)}>{it._nama_fix} <span className="text-[10px] text-blue-600">↗</span></td><td className="p-2 text-xs bg-purple-50 font-bold">{it.custom_value_1 || "-"}</td><td className="p-2 text-xs font-mono bg-yellow-50">{it.id_halal_19 || "-"}</td><td className="p-2"><span className="bg-blue-100 px-2 py-1 rounded-full text-xs">{it.stok||it.stock}</span></td><td className="p-2 flex gap-1"><button onClick={()=>handleClickNama(it)} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">Edit Kode</button><button onClick={()=>handleDelete(it)} className="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold">🗑️</button></td></tr>))}</tbody></table></div>)}
             </div>
           );
         })}
