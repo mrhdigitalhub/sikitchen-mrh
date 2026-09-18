@@ -96,7 +96,25 @@ export default function InventoryPage(){
     if(quickPrefix==="Hall" && quickIdHalal && quickIdHalal.length!==19){ alert("Hall- wajib 19 digit!"); return; }
     
     const kodeFixBaru = quickKodeKat || quick._kode_fix;
-    const kodeBahanBaru = quickPrefix ? `${quickPrefix}-${kodeFixBaru}-${quick._nomor}` : `${kodeFixBaru}-${quick._nomor}`;
+    // V15.9 FIX: kalau ganti kategori, nomor harus berurutan baru, bukan pakai nomor lama 011
+    let nomorBaru = quick._nomor;
+    if(kodeFixBaru !== quick._kode_fix){
+      const numsForBaru = items.filter(i=> (i._kode_fix||"")===kodeFixBaru).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
+      const maxBaru = numsForBaru.length ? Math.max(...numsForBaru) : 0;
+      // kalau kode baru sama dengan yang lagi di-edit, exclude dirinya sendiri sudah otomatis karena filter _kode_fix sama tapi max akan termasuk dia, jadi +1 tetap ok, tapi kalau mau keep, kita pakai max+1
+      nomorBaru = String(maxBaru + 1).padStart(3,"0");
+      // kalau ternyata nomor lama masih kosong (item baru), tetap pakai max+1
+      if(kodeFixBaru===quick._kode_fix) nomorBaru = quick._nomor;
+    }
+    // kalau tetap kategori sama, pakai nomor lama biar tidak ganti
+    if(kodeFixBaru===quick._kode_fix) nomorBaru = quick._nomor;
+    else {
+      // hitung ulang max untuk kode baru
+      const nums = items.filter(i=> (i._kode_fix||"")===kodeFixBaru).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
+      const mx = nums.length? Math.max(...nums):0;
+      nomorBaru = String(mx+1).padStart(3,"0");
+    }
+    const kodeBahanBaru = quickPrefix ? `${quickPrefix}-${kodeFixBaru}-${nomorBaru}` : `${kodeFixBaru}-${nomorBaru}`;
     const kategoriBaru = mapKodeKeUtama[kodeFixBaru] || quick._utama;
 
     // V15.6 FIX: HANYA KIRIM KOLOM YANG ADA DI DB - TIDAK ADA kategori_utama, unit, kode_lama kalau tidak ada - BIAR TIDAK SCHEMA CACHE ERROR
@@ -205,11 +223,19 @@ export default function InventoryPage(){
                 <option value="HEWANI">HEWANI - Bahan Hewani (lama)</option>
               </select>
             </div>
-            <div><div className="text-xs">Kode Final Baru</div><input value={quickPrefix ? `${quickPrefix}-${quickKodeKat}-${quick._nomor}` : `${quickKodeKat}-${quick._nomor}`} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100 text-green-800" /></div>
+            <div><div className="text-xs">Kode Final Baru</div><input value={(()=>{
+              let nb = quick._nomor;
+              if(quickKodeKat !== quick._kode_fix){
+                const nums = items.filter(i=> (i._kode_fix||"")===quickKodeKat).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
+                const mx = nums.length? Math.max(...nums):0;
+                nb = String(mx+1).padStart(3,"0");
+              }
+              return quickPrefix ? `${quickPrefix}-${quickKodeKat}-${nb}` : `${quickKodeKat}-${nb}`;
+            })()} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100 text-green-800" /></div>
             <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek (custom_value_1)</div><input value={quickMerek} onChange={e=>setQuickMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm font-bold mt-1" autoFocus /></div>
             <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 SAJA</div><input value={quickIdHalal} onChange={e=>setQuickIdHalal(e.target.value)} placeholder="19 digit / kosong" className="w-full p-2 border-2 border-yellow-500 rounded text-sm font-bold mt-1" maxLength={19} /></div>
           </div>
-          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update FINAL FIX - {quick._kode_tampil} JADI {quickPrefix ? `${quickPrefix}-${quickKodeKat}-${quick._nomor}` : `${quickKodeKat}-${quick._nomor}`}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update FINAL FIX - {quick._kode_tampil} JADI {(()=>{ let nb=quick._nomor; if(quickKodeKat!==quick._kode_fix){ const nums=items.filter(i=> (i._kode_fix||"")===quickKodeKat).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0); const mx=nums.length?Math.max(...nums):0; nb=String(mx+1).padStart(3,"0"); } return quickPrefix?`${quickPrefix}-${quickKodeKat}-${nb}`:`${quickKodeKat}-${nb}`; })()}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
