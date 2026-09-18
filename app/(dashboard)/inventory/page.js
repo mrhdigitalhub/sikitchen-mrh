@@ -31,10 +31,10 @@ export default function InventoryPage(){
   const [newMerek, setNewMerek] = useState("");
 
   const newKategoriUtama = mapKodeKeUtama[newKodeKat] || "Bahan Baku Utama";
-  // FIX URUTAN: ambil nomor max per kode kategori, bukan length, biar berurutan 001,002,003
-  const numsForKode = items.filter(i=> (i._kode_fix||"")===newKodeKat).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
-  const maxNoForKode = numsForKode.length ? Math.max(...numsForKode) : 0;
-  const nextNoForKode = maxNoForKode + 1;
+  // V15.8 FIX: next kode per kategori utama (biar OLAHAN HEWANI tidak loncat)
+  const numsForUtama = items.filter(i=> (i._utama||"")===newKategoriUtama).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
+  const maxNoUtama = numsForUtama.length ? Math.max(...numsForUtama) : 0;
+  const nextNoForKode = maxNoUtama + 1;
   const baseKode = `${newKodeKat}-${String(nextNoForKode).padStart(3,"0")}`;
   const newKodeDisplay = newPrefix ? `${newPrefix}-${baseKode}` : baseKode;
 
@@ -43,7 +43,7 @@ export default function InventoryPage(){
   async function loadMasterAndData(){
     const { data: kodeData } = await supabase.from("master_kode_kategori").select("*").order("kode");
     const { data: katData } = await supabase.from("master_kategori_utama").select("*").order("urutan");
-    let kodeList = kodeData; let katList = katData; let map = {}; // FIX include OLAHAN HEWANI mapping
+    let kodeList = kodeData; let katList = katData; let map = {};
     if(!kodeData || kodeData.length===0){
       kodeList = [{kode:"BERAS",kategori_utama:"Bahan Baku Utama"},{kode:"BOX",kategori_utama:"Bahan Kemasan"},{kode:"BERSIH",kategori_utama:"Bahan Pembersih"},{kode:"DAGING",kategori_utama:"Bahan Hewani"},{kode:"HEWANI",kategori_utama:"Bahan Hewani"},{kode:"UMBI",kategori_utama:"Bahan Nabati"},{kode:"IKAN",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"UDANG",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"CUMI",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"TELUR",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"SUSU",kategori_utama:"Bahan Susu"},{kode:"FERMENTASI",kategori_utama:"Bahan Fermentasi Alami"},{kode:"MINYAK",kategori_utama:"Bahan Minyak dan Lemak"},{kode:"BUBUK",kategori_utama:"Bahan Bumbu Instan"},{kode:"SAYURAN",kategori_utama:"Bahan Sayuran"},{kode:"BUAH",kategori_utama:"Bahan Buah Segar"},{kode:"PENYEDAP",kategori_utama:"Bahan Penyedap Rasa"},{kode:"REMPAH",kategori_utama:"Bahan Rempah Alami"},{kode:"KERUPUK",kategori_utama:"Bahan Pelengkap"},];
     }
@@ -78,14 +78,9 @@ export default function InventoryPage(){
     const s = search.toLowerCase();
     return i._kode_tampil.toLowerCase().includes(s) || (i._nama_fix||"").toLowerCase().includes(s) || (i.custom_value_1||"").toLowerCase().includes(s) || (i.id_halal_19||"").includes(s);
   });
-  // FIX URUTAN: sort global by nomor dulu, dan group akan di-sort lagi per kategori
-  filtered.sort((a,b)=> {
-    const na = parseInt((a._nomor||"0").toString().replace(/\D/g,""))||0;
-    const nb = parseInt((b._nomor||"0").toString().replace(/\D/g,""))||0;
-    if(a._kode_fix===b._kode_fix) return na-nb;
-    return (a._kode_fix||"").localeCompare(b._kode_fix||"");
-  });
   const grouped = filtered.reduce((acc,cur)=>{ const kat = cur._utama || "Bahan Baku Utama"; if(!acc[kat]) acc[kat]=[]; acc[kat].push(cur); return acc; },{});
+  // V15.8: sort tiap kategori by nomor biar berurutan 001,002,003
+  Object.keys(grouped).forEach(k=>{ grouped[k].sort((a,b)=>{ const na=parseInt((a._nomor||"0").toString().replace(/\D/g,""))||0; const nb=parseInt((b._nomor||"0").toString().replace(/\D/g,""))||0; return na-nb; }); });
 
   function handleClickNama(item){
     setQuick(item); setQuickStock(""); setQuickHarga(String(item.harga_beli||item.harga||0));
