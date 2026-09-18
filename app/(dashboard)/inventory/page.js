@@ -31,8 +31,10 @@ export default function InventoryPage(){
   const [newMerek, setNewMerek] = useState("");
 
   const newKategoriUtama = mapKodeKeUtama[newKodeKat] || "Bahan Baku Utama";
-  const countForKode = items.filter(i=> (i._kode_fix||"")===newKodeKat).length;
-  const nextNoForKode = countForKode + 1;
+  // FIX URUTAN: ambil nomor max per kode kategori, bukan length, biar berurutan 001,002,003
+  const numsForKode = items.filter(i=> (i._kode_fix||"")===newKodeKat).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
+  const maxNoForKode = numsForKode.length ? Math.max(...numsForKode) : 0;
+  const nextNoForKode = maxNoForKode + 1;
   const baseKode = `${newKodeKat}-${String(nextNoForKode).padStart(3,"0")}`;
   const newKodeDisplay = newPrefix ? `${newPrefix}-${baseKode}` : baseKode;
 
@@ -41,7 +43,7 @@ export default function InventoryPage(){
   async function loadMasterAndData(){
     const { data: kodeData } = await supabase.from("master_kode_kategori").select("*").order("kode");
     const { data: katData } = await supabase.from("master_kategori_utama").select("*").order("urutan");
-    let kodeList = kodeData; let katList = katData; let map = {};
+    let kodeList = kodeData; let katList = katData; let map = {}; // FIX include OLAHAN HEWANI mapping
     if(!kodeData || kodeData.length===0){
       kodeList = [{kode:"BERAS",kategori_utama:"Bahan Baku Utama"},{kode:"BOX",kategori_utama:"Bahan Kemasan"},{kode:"BERSIH",kategori_utama:"Bahan Pembersih"},{kode:"DAGING",kategori_utama:"Bahan Hewani"},{kode:"HEWANI",kategori_utama:"Bahan Hewani"},{kode:"UMBI",kategori_utama:"Bahan Nabati"},{kode:"IKAN",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"UDANG",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"CUMI",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"TELUR",kategori_utama:"Bahan Hewani Non Sembelihan"},{kode:"SUSU",kategori_utama:"Bahan Susu"},{kode:"FERMENTASI",kategori_utama:"Bahan Fermentasi Alami"},{kode:"MINYAK",kategori_utama:"Bahan Minyak dan Lemak"},{kode:"BUBUK",kategori_utama:"Bahan Bumbu Instan"},{kode:"SAYURAN",kategori_utama:"Bahan Sayuran"},{kode:"BUAH",kategori_utama:"Bahan Buah Segar"},{kode:"PENYEDAP",kategori_utama:"Bahan Penyedap Rasa"},{kode:"REMPAH",kategori_utama:"Bahan Rempah Alami"},{kode:"KERUPUK",kategori_utama:"Bahan Pelengkap"},];
     }
@@ -75,6 +77,13 @@ export default function InventoryPage(){
     if(!search) return true;
     const s = search.toLowerCase();
     return i._kode_tampil.toLowerCase().includes(s) || (i._nama_fix||"").toLowerCase().includes(s) || (i.custom_value_1||"").toLowerCase().includes(s) || (i.id_halal_19||"").includes(s);
+  });
+  // FIX URUTAN: sort global by nomor dulu, dan group akan di-sort lagi per kategori
+  filtered.sort((a,b)=> {
+    const na = parseInt((a._nomor||"0").toString().replace(/\D/g,""))||0;
+    const nb = parseInt((b._nomor||"0").toString().replace(/\D/g,""))||0;
+    if(a._kode_fix===b._kode_fix) return na-nb;
+    return (a._kode_fix||"").localeCompare(b._kode_fix||"");
   });
   const grouped = filtered.reduce((acc,cur)=>{ const kat = cur._utama || "Bahan Baku Utama"; if(!acc[kat]) acc[kat]=[]; acc[kat].push(cur); return acc; },{});
 
@@ -216,7 +225,7 @@ export default function InventoryPage(){
           return (
             <div key={kat} className="border-b last:border-0">
               <div className="p-3 font-bold text-sm flex justify-between items-center bg-slate-50"><div className="cursor-pointer flex-1" onClick={()=>setExpanded(prev=>({...prev, [kat]: !isOpen}))}>{i+1} &nbsp; {kat} - {list.length} bahan {isOpen?"▼":"▶"}</div><button onClick={()=>setExpanded(prev=>({...prev, [kat]: !isOpen}))} className="text-xs bg-white border px-2 py-1 rounded">{isOpen?"Tutup":"Buka"}</button></div>
-              {isOpen && (<div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-white text-xs"><tr><th className="text-left p-2">No</th><th className="text-left p-2">Kode</th><th className="text-left p-2">Nama</th><th className="text-left p-2">Merek</th><th className="text-left p-2">id_halal_19</th><th className="text-left p-2">Stock</th><th className="text-left p-2">Aksi</th></tr></thead><tbody>{list.map(it=>(<tr key={it.id || it.kode_bahan || it.kode} className="border-t hover:bg-blue-50"><td className="p-2 text-xs">{String(it._no).padStart(3,"0")}</td><td className="p-2 font-mono text-xs font-bold">{it._kode_tampil}</td><td className="p-2 font-semibold cursor-pointer" onClick={()=>handleClickNama(it)}>{it._nama_fix} <span className="text-[10px] text-blue-600">↗</span></td><td className="p-2 text-xs bg-purple-50 font-bold">{it.custom_value_1 || "-"}</td><td className="p-2 text-xs font-mono bg-yellow-50">{it.id_halal_19 || "-"}</td><td className="p-2"><span className="bg-blue-100 px-2 py-1 rounded-full text-xs">{it.stok||it.stock}</span></td><td className="p-2 flex gap-1"><button onClick={()=>handleClickNama(it)} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">Edit Kode</button><button onClick={()=>handleDelete(it)} className="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold">🗑️</button></td></tr>))}</tbody></table></div>)}
+              {isOpen && (<div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-white text-xs"><tr><th className="text-left p-2">No</th><th className="text-left p-2">Kode</th><th className="text-left p-2">Nama</th><th className="text-left p-2">Merek</th><th className="text-left p-2">id_halal_19</th><th className="text-left p-2">Stock</th><th className="text-left p-2">Aksi</th></tr></thead><tbody>{list.map((it, idx)=>(<tr key={it.id || it.kode_bahan || it.kode} className="border-t hover:bg-blue-50"><td className="p-2 text-xs">{String(idx+1).padStart(3,"0")}</td><td className="p-2 font-mono text-xs font-bold">{it._kode_tampil}</td><td className="p-2 font-semibold cursor-pointer" onClick={()=>handleClickNama(it)}>{it._nama_fix} <span className="text-[10px] text-blue-600">↗</span></td><td className="p-2 text-xs bg-purple-50 font-bold">{it.custom_value_1 || "-"}</td><td className="p-2 text-xs font-mono bg-yellow-50">{it.id_halal_19 || "-"}</td><td className="p-2"><span className="bg-blue-100 px-2 py-1 rounded-full text-xs">{it.stok||it.stock}</span></td><td className="p-2 flex gap-1"><button onClick={()=>handleClickNama(it)} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">Edit Kode</button><button onClick={()=>handleDelete(it)} className="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold">🗑️</button></td></tr>))}</tbody></table></div>)}
             </div>
           );
         })}
