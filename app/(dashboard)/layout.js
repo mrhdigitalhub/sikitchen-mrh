@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
-// LAYOUT DASHBOARD V2 - SIDEBAR STATIS, INVENTORY BISA SCROLL - FIX STAG
+// LAYOUT DASHBOARD V15.8 - SIDEBAR STATIS + LOGOUT BUTTON BALIK
 export default function DashboardLayout({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const menu = [
@@ -20,9 +22,20 @@ export default function DashboardLayout({ children }) {
 
   const isActive = (href) => pathname === href || pathname?.startsWith(href + "/");
 
+  async function handleLogout() {
+    if (!confirm("Yakin mau logout Bos?")) return;
+    try {
+      await supabase.auth.signOut();
+      router.push("/login");
+    } catch (e) {
+      console.log(e);
+      router.push("/login");
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#f5f7fb]">
-      {/* SIDEBAR FIXED - DIAM TIDAK IKUT SCROLL */}
+      {/* SIDEBAR FIXED */}
       <aside
         className={`fixed left-0 top-0 bottom-0 w-64 bg-slate-900 text-white flex flex-col z-50
         transform transition-transform duration-200
@@ -45,8 +58,18 @@ export default function DashboardLayout({ children }) {
             </Link>
           ))}
         </nav>
-        <div className="p-3 border-t border-slate-700 shrink-0 text-[10px] text-slate-400">
-          V15.7 Fix Stag - Sidebar Static
+        
+        {/* LOGOUT + VERSI */}
+        <div className="p-3 border-t border-slate-700 shrink-0 space-y-2">
+          <button
+            onClick={handleLogout}
+            className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+          >
+            🚪 Logout
+          </button>
+          <div className="text-[10px] text-slate-400 text-center">
+            V15.8 Fix Stag + Logout - Sidebar Static
+          </div>
         </div>
       </aside>
 
@@ -54,16 +77,14 @@ export default function DashboardLayout({ children }) {
         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* MAIN CONTENT - DIBERI MARGIN KIRI 64, BISA SCROLL NORMAL */}
+      {/* MAIN CONTENT */}
       <div className="md:pl-64 flex flex-col min-h-screen">
-        {/* Topbar mobile */}
         <div className="md:hidden sticky top-0 z-30 bg-slate-900 text-white p-3 flex justify-between items-center">
           <button onClick={() => setSidebarOpen(true)} className="bg-slate-800 px-3 py-1.5 rounded">☰ Menu</button>
           <span className="font-bold text-sm">Sikitchen OS</span>
-          <div className="w-12" />
+          <button onClick={handleLogout} className="bg-red-600 px-3 py-1.5 rounded text-xs">Logout</button>
         </div>
 
-        {/* INVENTORY PAGE - SCROLL NORMAL, TIDAK STAG LAGI */}
         <main className="flex-1">
           {children}
         </main>
