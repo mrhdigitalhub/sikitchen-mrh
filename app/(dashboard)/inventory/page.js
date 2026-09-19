@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchInventoryCompat } from "@/lib/inventoryCompat";
 
-// INVENTORY V15.10 FINAL - Biasa deleted, Hall wajib 19 digit, Orgk auto disable - FIX kategori_utama TIDAK ADA - HANYA KIRIM KOLOM YANG ADA DI DB SAJA
+// INVENTORY V15.6 FINAL - FIX kategori_utama TIDAK ADA - HANYA KIRIM KOLOM YANG ADA DI DB SAJA
 export default function InventoryPage(){
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
@@ -30,13 +30,13 @@ export default function InventoryPage(){
   const [newIdHalal, setNewIdHalal] = useState("");
   const [newMerek, setNewMerek] = useState("");
 
-  const newKategoriUtama = mapKodeKeUtama[newKodeKat] || "Bahan Baku Utama";
+  const newKategoriUtama = mapKodeKeUtama[newKodeKat] || "Bahan Baku Utama"; // V15.11 Simple - Biasa deleted
   // V15.8 FIX: next kode per kategori utama (biar OLAHAN HEWANI tidak loncat)
   const numsForUtama = items.filter(i=> (i._utama||"")===newKategoriUtama).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
   const maxNoUtama = numsForUtama.length ? Math.max(...numsForUtama) : 0;
   const nextNoForKode = maxNoUtama + 1;
   const baseKode = `${newKodeKat}-${String(nextNoForKode).padStart(3,"0")}`;
-  const newKodeDisplay = `${newPrefix}-${baseKode}`; // V15.10 Biasa deleted, selalu Hall- atau Orgk-
+  const newKodeDisplay = newPrefix ? `${newPrefix}-${baseKode}` : baseKode;
 
   useEffect(()=>{ loadMasterAndData(); },[]);
 
@@ -64,7 +64,7 @@ export default function InventoryPage(){
         kodeFix = kodeFix.toUpperCase();
         const utama = map[kodeFix] || d.kategori || "Bahan Baku Utama";
         const nomor = (d.kode_bahan||d.kode||"").split("-").pop() || String(i+1).padStart(3,"0");
-        const kodeTampil = prefix ? `${prefix}-${kodeFix}-${nomor}` : `Hall-${kodeFix}-${nomor}`; // V15.10 Biasa deleted default Hall
+        const kodeTampil = prefix ? `${prefix}-${kodeFix}-${nomor}` : `${kodeFix}-${nomor}`;
         const namaFix = d.nama_bahan || d.name || "";
         return {...d, _no: i+1, _kode_fix: kodeFix, _kode_tampil: kodeTampil, _prefix: prefix, _utama: utama, _nomor: nomor, _nama_fix: namaFix}
       });
@@ -85,17 +85,14 @@ export default function InventoryPage(){
   function handleClickNama(item){
     setQuick(item); setQuickStock(""); setQuickHarga(String(item.harga_beli||item.harga||0));
     setQuickMerek(item.custom_value_1 || ""); setQuickIdHalal(item.id_halal_19 || "");
-    let pref = item.kode_prefix || item._prefix || "Hall";
-    if(!["Hall","Orgk"].includes(pref)) pref="Hall"; // Biasa di-delete jadi default Hall
-    setQuickPrefix(pref); setQuickKodeKat(item._kode_fix || "HEWANI");
+    let _pref = item.kode_prefix || item._prefix || "Hall"; if(!["Hall","Orgk"].includes(_pref)) _pref="Hall"; setQuickPrefix(_pref); setQuickKodeKat(item._kode_fix || "HEWANI");
     setQuickKodeLama(item.kode_lama || "");
   }
   
   async function handleUpdate(){
     if(!quick) return;
-    // V15.10: Hall wajib 19 digit, Orgk auto kosong
-    if(quickPrefix==="Hall" && quickIdHalal.length!==19){ alert("Bos, Hall- wajib isi ID Halal 19 digit Bos! Saat ini baru "+quickIdHalal.length+" digit Bos"); return; }
-    if(quickPrefix==="Orgk"){ setQuickIdHalal(""); }
+    if(quickPrefix==="Hall" && quickIdHalal.length!==19){ alert("Bos Hall wajib 19 digit, sekarang "+quickIdHalal.length); return; }
+    if(quickPrefix==="Orgk") quickIdHalal="";
     const tambah = Number(quickStock||0); const stockLama = Number(quick.stok||quick.stock||0);
     const stockBaruTotal = tambah ? stockLama + tambah : stockLama;
     if(quickPrefix==="Hall" && quickIdHalal && quickIdHalal.length!==19){ alert("Hall- wajib 19 digit!"); return; }
@@ -164,9 +161,7 @@ export default function InventoryPage(){
   function handleTambahBahan(){ if(showTambah){ setShowTambah(false); }else{ setNewKodeKat(masterKode[0]?.kode || "BERAS"); setNewNama(""); setNewStock("10"); setNewHarga("15000"); setNewPrefix(""); setNewKodeLama(""); setNewIdHalal(""); setNewMerek(""); setShowTambah(true); window.scrollTo({top:0, behavior:'smooth'}); } }
 
   async function handleSimpanTambah(){
-    // V15.10 validation
-    if(newPrefix==="Hall" && newIdHalal.length!==19){ alert("Bos, Hall- wajib 19 digit Bos! Saat ini "+newIdHalal.length); return; }
-    if(newPrefix==="Orgk" && newIdHalal!==""){ setNewIdHalal(""); }
+    if(newPrefix==="Hall" && newIdHalal.length!==19){ alert("Bos Hall wajib 19 digit, sekarang "+newIdHalal.length); return; }
     if(!newNama){ alert("Nama bahan wajib"); return; }
     if(newPrefix==="Hall" && newIdHalal.length!==19){ alert("Hall- wajib 19 digit!"); return; }
     // V15.6 FIX: INSERT MINIMAL HANYA KOLOM WAJIB - BIAR TIDAK ERROR name / kategori_utama / schema cache
@@ -207,30 +202,24 @@ export default function InventoryPage(){
         <div className="bg-white border-2 border-green-500 p-4 rounded-xl my-3 shadow">
           <div className="font-bold text-sm mb-2 text-green-700">✅ Tambah Bahan V15.6 FINAL - Anti Error name & kategori_utama</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="bg-yellow-50 border-2 border-yellow-400 p-3 rounded"><div className="text-xs font-bold">Prefix Hall/Orgk</div><select value={newPrefix} onChange={e=>{
-              const v=e.target.value; setNewPrefix(v);
-              if(v==="Orgk"){ setNewIdHalal(""); }
-            }} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold mt-1"><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
+            <div className="bg-yellow-50 border-2 border-yellow-400 p-3 rounded"><div className="text-xs font-bold">Prefix Hall/Orgk</div><select value={newPrefix} onChange={e=>{const v=e.target.value; setNewPrefix(v); if(v==="Orgk") setNewIdHalal("");}} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold mt-1"><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
             <div className="bg-blue-50 border-2 border-blue-400 p-3 rounded"><div className="text-xs font-bold">Kode Kategori</div><select value={newKodeKat} onChange={e=> setNewKodeKat(e.target.value)} className="w-full p-2 border-2 border-blue-500 rounded text-sm font-bold mt-1">{masterKode.map(k=>{ const count = items.filter(i=>i._kode_fix===k.kode).length+1; return <option key={k.kode} value={k.kode}>{k.kode} - Next {k.kode}-{String(count).padStart(3,"0")}</option> })}</select></div>
             <div className="bg-green-50 border-2 border-green-400 p-3 rounded"><div className="text-xs font-bold">Kode Final</div><input value={newKodeDisplay} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-50 mt-1" /></div>
             <div className="bg-white border-2 border-green-300 p-2 rounded"><div className="text-xs font-semibold">Nama Bahan *</div><input value={newNama} onChange={e=>setNewNama(e.target.value)} placeholder="Ayam Potong" className="w-full p-2 border-2 border-green-400 rounded text-sm mt-1" autoFocus /></div>
             <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek</div><input value={newMerek} onChange={e=>setNewMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm mt-1" /></div>
-            <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 SAJA {newPrefix==="Hall" ? "(WAJIB 19 digit)" : "(Auto kosong untuk Orgk)"}</div><input value={newIdHalal} onChange={e=>setNewIdHalal(e.target.value)} placeholder={newPrefix==="Hall" ? "Wajib 19 digit" : "Auto kosong"} className={`w-full p-2 border-2 rounded text-sm mt-1 ${newPrefix==="Orgk" ? "bg-gray-200 border-gray-400 text-gray-500" : newPrefix==="Hall" && newIdHalal.length!==19 ? "border-red-500 bg-red-50" : "border-yellow-500"}`} maxLength={19} disabled={newPrefix==="Orgk"} /></div>
+            <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 {newPrefix==="Hall"?"Wajib 19 digit (0 depan kesimpan)":"Orgk kosong"}</div><input type="text" inputMode="numeric" value={newIdHalal} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,""); setNewIdHalal(v);}} onKeyDown={e=>{if(e.key==="Enter"){ handleSimpanTambah(); }}} placeholder={newPrefix==="Hall"?"19 digit, 0 depan boleh":"auto kosong"} className="w-full p-2 border-2 border-yellow-500 rounded text-sm mt-1 bg-white font-mono" maxLength={19} disabled={newPrefix==="Orgk"} /></div>
           </div>
-          <div className="mt-3 flex gap-2"><button disabled={newPrefix==="Hall" && newIdHalal.length!==19} onClick={handleSimpanTambah} className={`flex-1 py-3 rounded font-bold text-sm ${newPrefix==="Hall" && newIdHalal.length!==19 ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-green-600 text-white"}`}>Simpan - {newKodeDisplay} - FINAL FIX V15.10</button><button onClick={()=>setShowTambah(false)} className="px-6 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-3 flex gap-2"><button onClick={handleSimpanTambah} className="flex-1 bg-green-600 text-white py-3 rounded font-bold text-sm">Simpan - {newKodeDisplay} - FINAL FIX</button><button onClick={()=>setShowTambah(false)} className="px-6 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
       {quick && (
         <div className="bg-green-50 border-2 border-green-400 p-4 rounded-xl my-3 shadow-lg border-dashed">
-          <div className="font-bold text-green-800 text-sm">🛠️ FINAL FIX: GANTI KODE HEWANI-001 JADI DAGING-001 - Anti Error Schema Cache</div>
+          <div className="font-bold text-green-800 text-sm">🛠️ FINAL FIX V15.12 - Hall aktif Orgk disable 0 depan Enter Save: Biasa deleted, Hall wajib 19, Orgk disable - Simple - Anti Error Schema Cache</div>
           <div className="bg-yellow-100 border border-yellow-400 p-2 rounded text-xs mt-2">Bos, sekarang aku cuma kirim kolom yang pasti ada di DB Bos: kode_bahan, name, nama_bahan, kategori, stok, harga_beli, id_halal_19, custom_value_1, kode_prefix. Tidak ada kategori_utama lagi.</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
             <div><div className="text-xs font-bold">Nama Bahan</div><input value={quick._nama_fix} disabled className="w-full p-2 border rounded bg-gray-100 text-sm" /></div>
-            <div><div className="text-xs font-bold">Prefix Hall/Orgk (Biasa di-delete)</div><select value={quickPrefix} onChange={e=>{
-                const v=e.target.value; setQuickPrefix(v);
-                if(v==="Orgk"){ setQuickIdHalal(""); }
-              }} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
+            <div><div className="text-xs font-bold">Prefix Hall/Orgk (Biasa deleted)</div><select value={quickPrefix} onChange={e=>{const v=e.target.value; setQuickPrefix(v); if(v==="Orgk") setQuickIdHalal("");}} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
             <div className="bg-blue-50 border-2 border-blue-500 p-2 rounded"><div className="text-xs font-bold">Kode Kategori - GANTI HEWANI JADI DAGING DI SINI</div>
               <select value={quickKodeKat} onChange={e=>setQuickKodeKat(e.target.value)} className="w-full p-2 border-2 border-blue-600 rounded text-sm font-bold bg-white mt-1">
                 {masterKode.map(k=> <option key={k.kode} value={k.kode}>{k.kode} - {k.kategori_utama}</option>)}
@@ -247,9 +236,9 @@ export default function InventoryPage(){
               return quickPrefix ? `${quickPrefix}-${quickKodeKat}-${nb}` : `${quickKodeKat}-${nb}`;
             })()} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100 text-green-800" /></div>
             <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek (custom_value_1)</div><input value={quickMerek} onChange={e=>setQuickMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm font-bold mt-1" autoFocus /></div>
-            <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 SAJA {quickPrefix==="Hall" ? "(WAJIB 19 digit)" : "(Auto kosong Orgk)"}</div><input value={quickIdHalal} onChange={e=>setQuickIdHalal(e.target.value)} placeholder={quickPrefix==="Hall" ? "Wajib 19 digit" : "Auto kosong untuk Orgk"} className={`w-full p-2 border-2 rounded text-sm font-bold mt-1 ${quickPrefix==="Orgk" ? "bg-gray-200 border-gray-400 text-gray-500" : quickPrefix==="Hall" && quickIdHalal.length!==19 ? "border-red-500 bg-red-50" : "border-yellow-500"}`} maxLength={19} disabled={quickPrefix==="Orgk"} /></div>
+            <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 {quickPrefix==="Hall"?"Wajib 19 (0 depan kesimpan)":"Orgk kosong"} - Enter=Save</div><input type="text" inputMode="numeric" value={quickIdHalal} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,""); setQuickIdHalal(v);}} onKeyDown={e=>{if(e.key==="Enter"){ handleUpdate(); }}} placeholder={quickPrefix==="Hall"?"19 digit, 0 depan boleh":"auto kosong"} className="w-full p-2 border-2 border-yellow-500 rounded text-sm font-bold mt-1 bg-white font-mono" maxLength={19} disabled={quickPrefix==="Orgk"} /></div>
           </div>
-          <div className="mt-4 flex gap-2"><button disabled={quickPrefix==="Hall" && quickIdHalal.length!==19} onClick={handleUpdate} className={`flex-1 py-3 rounded font-bold text-sm ${quickPrefix==="Hall" && quickIdHalal.length!==19 ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}>💾 Update FINAL FIX - {quick._kode_tampil} JADI {(()=>{ let nb=quick._nomor; if(quickKodeKat!==quick._kode_fix){ const nums=items.filter(i=> (i._kode_fix||"")===quickKodeKat).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0); const mx=nums.length?Math.max(...nums):0; nb=String(mx+1).padStart(3,"0"); } return quickPrefix?`${quickPrefix}-${quickKodeKat}-${nb}`:`${quickKodeKat}-${nb}`; })()}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update FINAL FIX - {quick._kode_tampil} JADI {(()=>{ let nb=quick._nomor; if(quickKodeKat!==quick._kode_fix){ const nums=items.filter(i=> (i._kode_fix||"")===quickKodeKat).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0); const mx=nums.length?Math.max(...nums):0; nb=String(mx+1).padStart(3,"0"); } return quickPrefix?`${quickPrefix}-${quickKodeKat}-${nb}`:`${quickKodeKat}-${nb}`; })()}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
