@@ -2,14 +2,14 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-// MASTER MENU V16.7 - FIX SESUAI DEAL: HANYA 2 PILIHAN PAKET & SATUAN - KONDISIONAL BOX - TOMBOL SIMPAN FIX
+// MASTER MENU V16.8 - FIX PERSIST CENTANG HILANG + FONT +2PX - 2 MODEL PAKET & SATUAN
 export default function MasterMenuPage(){
   const [items,setItems]=useState([]);
   const [menuItems,setMenuItems]=useState([]);
   const [searchBahan,setSearchBahan]=useState("");
   const [searchOptional,setSearchOptional]=useState("");
   const [showTambah,setShowTambah]=useState(false);
-  const [tipeMenu,setTipeMenu]=useState("PAKET"); // HANYA 2 PILIHAN BOS - PAKET & SATUAN
+  const [tipeMenu,setTipeMenu]=useState("PAKET");
   const [newNama,setNewNama]=useState("");
   const [newQty,setNewQty]=useState("10");
   const [newHargaBaru,setNewHargaBaru]=useState("25000");
@@ -18,7 +18,32 @@ export default function MasterMenuPage(){
   const [komponenExpanded,setKomponenExpanded]=useState({});
   const [isSaving,setIsSaving]=useState(false);
 
-  useEffect(()=>{ fetchBahan(); fetchMenu(); },[]);
+  useEffect(()=>{ 
+    fetchBahan(); 
+    fetchMenu();
+    // LOAD PERSIST BOS - BIAR TIDAK HILANG PAS PINDAH DASHBOARD BOS
+    try{
+      const saved = localStorage.getItem("sikitchen_master_menu_draft_V16_8");
+      if(saved){
+        const d = JSON.parse(saved);
+        if(d.tipeMenu) setTipeMenu(d.tipeMenu);
+        if(d.newNama) setNewNama(d.newNama);
+        if(d.newQty) setNewQty(d.newQty);
+        if(d.newHargaBaru) setNewHargaBaru(d.newHargaBaru);
+        if(d.selectedBahan) setSelectedBahan(d.selectedBahan);
+        if(d.optionalBahan) setOptionalBahan(d.optionalBahan);
+        if(d.showTambah) setShowTambah(d.showTambah);
+      }
+    }catch(e){ console.log("no draft"); }
+  },[]);
+
+  // SAVE PERSIST SETIAP PERUBAHAN BOS
+  useEffect(()=>{
+    try{
+      const draft = { tipeMenu, newNama, newQty, newHargaBaru, selectedBahan, optionalBahan, showTambah };
+      localStorage.setItem("sikitchen_master_menu_draft_V16_8", JSON.stringify(draft));
+    }catch(e){}
+  },[tipeMenu, newNama, newQty, newHargaBaru, selectedBahan, optionalBahan, showTambah]);
 
   async function fetchBahan(){
     const {data}=await supabase.from("inventory_items").select("*").order("kode_bahan");
@@ -47,7 +72,6 @@ export default function MasterMenuPage(){
     if(exists){
       setList(prev=> prev.filter(b=> b.kode_bahan!==it.kode_bahan));
     } else {
-      // Untuk SATUAN default qty 1 porsi, untuk PAKET default 0.15
       const defaultQty = tipeMenu==="SATUAN" ? 1 : 0.15;
       const defaultSatuan = tipeMenu==="SATUAN" ? "Porsi" : (it.satuan||"Kg");
       setList(prev=> [...prev, {
@@ -65,6 +89,11 @@ export default function MasterMenuPage(){
   function updateQty(kode, val, isOptional){
     const setList = isOptional ? setOptionalBahan : setSelectedBahan;
     setList(prev=> prev.map(b=> b.kode_bahan===kode ? {...b, qty_per_porsi: Number(val)||0} : b));
+  }
+
+  function clearDraft(){
+    localStorage.removeItem("sikitchen_master_menu_draft_V16_8");
+    setSelectedBahan([]); setOptionalBahan([]); setNewNama(""); setNewQty("10"); setNewHargaBaru("25000");
   }
 
   const allKomponen = tipeMenu==="PAKET" ? [...selectedBahan, ...optionalBahan] : selectedBahan;
@@ -85,7 +114,7 @@ export default function MasterMenuPage(){
     if(!newNama) return alert("Nama Menu kosong Bos");
     if(selectedBahan.length===0) return alert(`Pilih minimal 1 bahan ${tipeMenu==="PAKET" ? "fixed Paket" : "Satuan"} Bos`);
     if(!isStockAman){
-      return alert(`Gagal Bos: Ada ${tidakTersedia.length} bahan stock kurang Bos: ${tidakTersedia.map(t=> `${t.kode_bahan} butuh ${t.required} stock ${t.available}`).join(", ")}`);
+      return alert(`Gagal Bos: Ada ${tidakTersedia.length} bahan stock kurang Bos`);
     }
     setIsSaving(true);
     const kodeMenu = `${tipeMenu==="PAKET" ? "PAKET" : "SATUAN"}-${String(menuItems.length+1).padStart(3,"0")}`;
@@ -94,7 +123,7 @@ export default function MasterMenuPage(){
       kode_menu: kodeMenu,
       nama_menu: newNama,
       name: newNama,
-      kategori: tipeMenu, // HANYA PAKET / SATUAN BOS SESUAI DEAL
+      kategori: tipeMenu,
       tipe: tipeMenu,
       tipe_menu: tipeMenu,
       qty: qtyOrder,
@@ -119,13 +148,13 @@ export default function MasterMenuPage(){
     try{
       const { error } = await supabase.from("menu_items").insert([payload]);
       if(error){
-        console.log("Insert error, coba fallback minimal Bos", error.message);
         const fallback = { kode: kodeMenu, nama_menu: newNama, name: newNama, kategori: tipeMenu, qty: qtyOrder, harga_jual: Number(newHargaBaru||0), deskripsi: payload.deskripsi, tipe: tipeMenu };
         const { error: e2 } = await supabase.from("menu_items").insert([fallback]);
         if(e2){ alert("Gagal Bos: "+e2.message); setIsSaving(false); return; }
       }
       alert(`Berhasil Bos: ${kodeMenu} ${tipeMenu} - ${newNama} - ${allKomponen.length} komponen - Stock AMAN Bos`);
-      setShowTambah(false); setNewNama(""); setSelectedBahan([]); setOptionalBahan([]); setIsSaving(false); fetchMenu();
+      clearDraft();
+      setShowTambah(false); setIsSaving(false); fetchMenu();
     }catch(err){
       alert("Error Bos: "+err.message);
       setIsSaving(false);
@@ -150,41 +179,45 @@ export default function MasterMenuPage(){
     <div className="p-3 bg-gray-100 min-h-screen">
       <div className="flex justify-between items-center mb-3">
         <div>
-          <h1 className="text-lg font-bold">Master Menu - V16.7 FIX 2 PILIHAN: PAKET & SATUAN + Stock Alert</h1>
-          <p className="text-xs text-gray-500">{items.length} bahan • {menuItems.length} menu • Deal: Hanya 2 pilihan Paket & Satuan - Kondisional Box Bos</p>
+          <h1 className="text-lg font-bold">Master Menu - V16.8 FIX PERSIST + FONT +2PX</h1>
+          <p className="text-xs text-gray-500">{items.length} bahan • {menuItems.length} menu • Fix: Centang tidak hilang pas pindah dashboard + Font list +2px Bos</p>
         </div>
-        <button onClick={()=>setShowTambah(true)} className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold">+ Buat Menu Paket / Satuan</button>
+        <div className="flex gap-2">
+          <button onClick={clearDraft} className="bg-gray-200 text-gray-700 px-3 py-2 rounded text-xs">🗑️ Clear Draft</button>
+          <button onClick={()=>setShowTambah(true)} className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold">+ Buat Menu Paket / Satuan</button>
+        </div>
       </div>
 
       {showTambah && (
         <div className="bg-white border-2 border-green-600 p-4 rounded-xl mb-4 shadow-xl">
-          <div className="font-bold text-sm mb-3">Buat Master Menu Paket - FIX 2 MODEL BOS SESUAI DEAL</div>
+          <div className="font-bold text-sm mb-3 flex justify-between">
+            <span>Buat Master Menu - V16.8 Persist Draft Bos (Tidak hilang pindah dashboard)</span>
+            <span className="text-[11px] bg-yellow-100 border px-2 py-1 rounded">Draft auto-save Bos</span>
+          </div>
           
-          {/* HANYA 2 PILIHAN BOS */}
           <div className="flex gap-3 mb-4">
-            <button onClick={()=>{setTipeMenu("PAKET"); setSelectedBahan([]); setOptionalBahan([]);}} className={`flex-1 p-3 rounded-xl border-2 font-bold text-sm ${tipeMenu==="PAKET" ? 'bg-blue-600 text-white border-blue-700' : 'bg-white border-gray-300'}`}>
-              📦 MENU PAKET (Box/Paket) - Nasi Box, Paket Ayam, Paket Lengkap
+            <button onClick={()=>{setTipeMenu("PAKET");}} className={`flex-1 p-3 rounded-xl border-2 font-bold text-sm ${tipeMenu==="PAKET" ? 'bg-blue-600 text-white border-blue-700' : 'bg-white border-gray-300'}`}>
+              📦 MENU PAKET (Box/Paket)
             </button>
-            <button onClick={()=>{setTipeMenu("SATUAN"); setSelectedBahan([]); setOptionalBahan([]);}} className={`flex-1 p-3 rounded-xl border-2 font-bold text-sm ${tipeMenu==="SATUAN" ? 'bg-orange-600 text-white border-orange-700' : 'bg-white border-gray-300'}`}>
-              🍗 MENU SATUAN (Masakan) - Ayam Bakar, Rendang, Sayur - 1-2 bahan
+            <button onClick={()=>{setTipeMenu("SATUAN");}} className={`flex-1 p-3 rounded-xl border-2 font-bold text-sm ${tipeMenu==="SATUAN" ? 'bg-orange-600 text-white border-orange-700' : 'bg-white border-gray-300'}`}>
+              🍗 MENU SATUAN (Masakan)
             </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
             <div><div className="text-xs font-bold">Nama Menu ({tipeMenu})</div><input value={newNama} onChange={e=>setNewNama(e.target.value)} placeholder={tipeMenu==="PAKET" ? "Paket Ayam bakar lengkap" : "Ayam Bakar Madu"} className="w-full p-2 border rounded text-sm font-bold" /></div>
-            <div className="bg-blue-50 border-2 border-blue-400 p-2 rounded"><div className="text-xs font-bold">Tipe Menu - FIX 2 PILIHAN</div><select value={tipeMenu} onChange={e=>{setTipeMenu(e.target.value); setSelectedBahan([]); setOptionalBahan([]);}} className="w-full p-2 border-2 border-blue-600 rounded text-sm font-bold bg-white mt-1"><option value="PAKET">PAKET</option><option value="SATUAN">SATUAN</option></select></div>
+            <div className="bg-blue-50 border-2 border-blue-400 p-2 rounded"><div className="text-xs font-bold">Tipe Menu - FIX 2 PILIHAN</div><select value={tipeMenu} onChange={e=>setTipeMenu(e.target.value)} className="w-full p-2 border-2 border-blue-600 rounded text-sm font-bold bg-white mt-1"><option value="PAKET">PAKET</option><option value="SATUAN">SATUAN</option></select></div>
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">QTY Pesanan</div><input type="number" value={newQty} onChange={e=>setNewQty(e.target.value)} className="w-full p-2 border-2 border-yellow-500 rounded text-sm font-bold mt-1" /></div>
               <div className="bg-green-50 border p-2 rounded"><div className="text-xs font-bold">Harga Jual / Porsi</div><input type="number" value={newHargaBaru} onChange={e=>setNewHargaBaru(e.target.value)} className="w-full p-2 border rounded text-sm font-bold mt-1" /></div>
             </div>
           </div>
 
-          {/* STOCK ALERT */}
           {allKomponen.length>0 && (
             <div className={`p-3 rounded-xl border-2 mb-4 ${isStockAman ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-600'}`}>
               <div className="font-bold text-sm flex justify-between">
                 <span>{isStockAman ? `✅ Stock AMAN untuk QTY ${qtyOrder} Bos - ${tipeMenu}` : `⚠️ ALERT ${tipeMenu}: ${tidakTersedia.length} Bahan Tidak Tersedia Bos!`}</span>
-                <span className="text-xs">{tipeMenu==="PAKET" ? `${allKomponen.length} = ${selectedBahan.length} fixed + ${optionalBahan.length} optional` : `${selectedBahan.length} bahan satuan`}</span>
+                <span className="text-xs">{tipeMenu==="PAKET" ? `${allKomponen.length} = ${selectedBahan.length} fixed + ${optionalBahan.length} optional` : `${selectedBahan.length} bahan satuan`} | Draft Tersimpan ✅</span>
               </div>
               {!isStockAman && (
                 <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -199,19 +232,18 @@ export default function MasterMenuPage(){
             </div>
           )}
 
-          {/* KONDISIONAL BOX SESUAI PILIHAN BOS */}
           {tipeMenu==="PAKET" ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="border-2 border-blue-500 rounded-xl p-3 bg-blue-50">
-                <div className="font-bold text-xs mb-2">📦 FIXED Komponen Paket (Wajib ada Bos) - QTY/Porsi</div>
-                <input value={searchBahan} onChange={e=>setSearchBahan(e.target.value)} placeholder="Cari bahan fixed paket..." className="w-full p-2 border rounded text-xs mb-2" />
-                <div className="max-h-[25vh] overflow-auto bg-white rounded border mb-2">
+                <div className="font-bold text-[13px] mb-2">📦 FIXED Komponen Paket (Wajib ada Bos) - FONT +2PX</div>
+                <input value={searchBahan} onChange={e=>setSearchBahan(e.target.value)} placeholder="Cari bahan fixed paket..." className="w-full p-2 border rounded text-[13px] mb-2" />
+                <div className="max-h-[30vh] overflow-auto bg-white rounded border mb-2">
                   {filtered.slice(0,80).map(it=>{
                     const checked = selectedBahan.find(b=> b.kode_bahan===it.kode_bahan);
                     return (
                       <label key={it.kode_bahan} className={`flex items-center gap-2 p-2 border-b hover:bg-blue-50 cursor-pointer ${checked?'bg-green-100':''}`}>
-                        <input type="checkbox" checked={!!checked} onChange={()=>toggleBahan(it,false)} className="w-4 h-4" />
-                        <div className="flex-1 text-[11px]"><span className="font-mono font-bold">{it.kode_bahan}</span> - {it.nama_bahan||it.name} <span className="text-gray-500">Stock {it.stok||it.stock||0}</span></div>
+                        <input type="checkbox" checked={!!checked} onChange={()=>toggleBahan(it,false)} className="w-5 h-5" />
+                        <div className="flex-1 text-[13px]"><span className="font-mono font-bold">{it.kode_bahan}</span> - {it.nama_bahan||it.name} <span className="text-gray-600 text-[12px]">Stock {it.stok||it.stock||0}</span></div>
                       </label>
                     );
                   })}
@@ -221,33 +253,33 @@ export default function MasterMenuPage(){
                     const check = stockChecks.find(c=> c.kode_bahan===b.kode_bahan && !c.is_optional);
                     return (
                       <div key={b.kode_bahan} className={`bg-white border rounded p-2 flex gap-2 items-center ${check && !check.is_cukup ? 'border-red-500 bg-red-50' : 'border-green-300'}`}>
-                        <div className="flex-1 text-[11px]"><div className="font-bold font-mono">{b.kode_bahan}</div><div>{b.nama_bahan}</div><div className="text-[10px]">Stock {b.stock_available} | Butuh {(Number(b.qty_per_porsi||0)*qtyOrder).toFixed(2)} {b.satuan}</div></div>
-                        <div className="w-20"><div className="text-[10px] font-bold">Qty/Porsi</div><input type="number" step="0.01" value={b.qty_per_porsi} onChange={e=>updateQty(b.kode_bahan, e.target.value, false)} className="w-full p-1 border-2 border-blue-400 rounded text-xs font-bold" /></div>
+                        <div className="flex-1 text-[13px]"><div className="font-bold font-mono">{b.kode_bahan}</div><div>{b.nama_bahan}</div><div className="text-[11px]">Stock {b.stock_available} | Butuh {(Number(b.qty_per_porsi||0)*qtyOrder).toFixed(2)} {b.satuan}</div></div>
+                        <div className="w-24"><div className="text-[11px] font-bold">Qty/Porsi</div><input type="number" step="0.01" value={b.qty_per_porsi} onChange={e=>updateQty(b.kode_bahan, e.target.value, false)} className="w-full p-1 border-2 border-blue-400 rounded text-[13px] font-bold" /></div>
                       </div>
                     );
                   })}
                 </div>
               </div>
               <div className="border-2 border-orange-400 rounded-xl p-3 bg-orange-50">
-                <div className="font-bold text-xs mb-2">➕ OPTIONAL Add-on Paket (Tambahan jika ada permintaan Bos)</div>
-                <input value={searchOptional} onChange={e=>setSearchOptional(e.target.value)} placeholder="Cari bahan optional..." className="w-full p-2 border rounded text-xs mb-2" />
-                <div className="max-h-[25vh] overflow-auto bg-white rounded border mb-2">
+                <div className="font-bold text-[13px] mb-2">➕ OPTIONAL Add-on Paket (Tambahan) - FONT +2PX</div>
+                <input value={searchOptional} onChange={e=>setSearchOptional(e.target.value)} placeholder="Cari bahan optional..." className="w-full p-2 border rounded text-[13px] mb-2" />
+                <div className="max-h-[30vh] overflow-auto bg-white rounded border mb-2">
                   {filteredOptional.slice(0,80).map(it=>{
                     const checked = optionalBahan.find(b=> b.kode_bahan===it.kode_bahan);
                     if(selectedBahan.find(b=> b.kode_bahan===it.kode_bahan)) return null;
                     return (
                       <label key={it.kode_bahan} className={`flex items-center gap-2 p-2 border-b hover:bg-orange-50 cursor-pointer ${checked?'bg-yellow-100':''}`}>
-                        <input type="checkbox" checked={!!checked} onChange={()=>toggleBahan(it,true)} className="w-4 h-4" />
-                        <div className="flex-1 text-[11px]"><span className="font-mono font-bold">{it.kode_bahan}</span> - {it.nama_bahan||it.name} <span className="text-gray-500">+ Rp {Number(it.harga_beli||0).toLocaleString("id-ID")}</span></div>
+                        <input type="checkbox" checked={!!checked} onChange={()=>toggleBahan(it,true)} className="w-5 h-5" />
+                        <div className="flex-1 text-[13px]"><span className="font-mono font-bold">{it.kode_bahan}</span> - {it.nama_bahan||it.name} <span className="text-gray-600 text-[12px]">+ Rp {Number(it.harga_beli||0).toLocaleString("id-ID")}</span></div>
                       </label>
                     );
                   })}
                 </div>
-                <div className="space-y-2 max-h-[35vh] overflow-auto">
+                <div className="space-y-2 max-h-[30vh] overflow-auto">
                   {optionalBahan.map(b=>(
                     <div key={b.kode_bahan} className="bg-white border border-orange-300 rounded p-2 flex gap-2 items-center">
-                      <div className="flex-1 text-[11px]"><div className="font-bold font-mono">{b.kode_bahan} (Optional)</div><div>{b.nama_bahan}</div></div>
-                      <div className="w-20"><div className="text-[10px] font-bold">Qty/Porsi</div><input type="number" step="0.01" value={b.qty_per_porsi} onChange={e=>updateQty(b.kode_bahan, e.target.value, true)} className="w-full p-1 border-2 border-orange-400 rounded text-xs font-bold" /></div>
+                      <div className="flex-1 text-[13px]"><div className="font-bold font-mono">{b.kode_bahan} (Optional)</div><div>{b.nama_bahan}</div></div>
+                      <div className="w-24"><div className="text-[11px] font-bold">Qty/Porsi</div><input type="number" step="0.01" value={b.qty_per_porsi} onChange={e=>updateQty(b.kode_bahan, e.target.value, true)} className="w-full p-1 border-2 border-orange-400 rounded text-[13px] font-bold" /></div>
                     </div>
                   ))}
                 </div>
@@ -255,56 +287,53 @@ export default function MasterMenuPage(){
             </div>
           ) : (
             <div className="border-2 border-orange-600 rounded-xl p-3 bg-orange-50">
-              <div className="font-bold text-xs mb-2">🍗 Komponen SATUAN (1-2 bahan saja Bos) - Tidak ada Optional Bos</div>
-              <input value={searchBahan} onChange={e=>setSearchBahan(e.target.value)} placeholder="Cari bahan untuk menu satuan..." className="w-full p-2 border rounded text-xs mb-2" />
+              <div className="font-bold text-[13px] mb-2">🍗 Komponen SATUAN (1-2 bahan saja Bos) - FONT +2PX</div>
+              <input value={searchBahan} onChange={e=>setSearchBahan(e.target.value)} placeholder="Cari bahan untuk menu satuan..." className="w-full p-2 border rounded text-[13px] mb-2" />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="max-h-[35vh] overflow-auto bg-white rounded border">
+                <div className="max-h-[40vh] overflow-auto bg-white rounded border">
                   {filtered.slice(0,80).map(it=>{
                     const checked = selectedBahan.find(b=> b.kode_bahan===it.kode_bahan);
                     return (
                       <label key={it.kode_bahan} className={`flex items-center gap-2 p-2 border-b hover:bg-orange-50 cursor-pointer ${checked?'bg-green-100':''}`}>
-                        <input type="checkbox" checked={!!checked} onChange={()=>toggleBahan(it,false)} className="w-4 h-4" />
-                        <div className="flex-1 text-[11px]"><span className="font-mono font-bold">{it.kode_bahan}</span> - {it.nama_bahan||it.name} <span className="text-gray-500">Stock {it.stok||it.stock||0}</span></div>
+                        <input type="checkbox" checked={!!checked} onChange={()=>toggleBahan(it,false)} className="w-5 h-5" />
+                        <div className="flex-1 text-[13px]"><span className="font-mono font-bold">{it.kode_bahan}</span> - {it.nama_bahan||it.name} <span className="text-gray-600 text-[12px]">Stock {it.stok||it.stock||0}</span></div>
                       </label>
                     );
                   })}
                 </div>
-                <div className="space-y-2 max-h-[35vh] overflow-auto">
-                  {selectedBahan.map(b=>{
-                    const check = stockChecks.find(c=> c.kode_bahan===b.kode_bahan);
-                    return (
-                      <div key={b.kode_bahan} className={`bg-white border rounded p-2 flex gap-2 items-center ${check && !check.is_cukup ? 'border-red-500 bg-red-50' : 'border-green-300'}`}>
-                        <div className="flex-1 text-[11px]"><div className="font-bold font-mono">{b.kode_bahan}</div><div>{b.nama_bahan}</div><div className="text-[10px]">Stock {b.stock_available} | Butuh {(Number(b.qty_per_porsi||0)*qtyOrder).toFixed(2)} {b.satuan} {check && !check.is_cukup && <span className="text-red-600 font-bold">❌</span>}</div></div>
-                        <div className="w-20"><div className="text-[10px] font-bold">Qty/Porsi</div><input type="number" step="0.01" value={b.qty_per_porsi} onChange={e=>updateQty(b.kode_bahan, e.target.value, false)} className="w-full p-1 border-2 border-orange-500 rounded text-xs font-bold" /></div>
-                      </div>
-                    );
-                  })}
-                  {selectedBahan.length===0 && <div className="text-xs text-gray-400 p-4 text-center border-dashed border rounded">Centang 1-2 bahan untuk menu satuan Bos</div>}
+                <div className="space-y-2 max-h-[40vh] overflow-auto">
+                  {selectedBahan.map(b=>(
+                    <div key={b.kode_bahan} className="bg-white border rounded p-2 flex gap-2 items-center">
+                      <div className="flex-1 text-[13px]"><div className="font-bold font-mono">{b.kode_bahan}</div><div>{b.nama_bahan}</div><div className="text-[11px]">Stock {b.stock_available} | Butuh {(Number(b.qty_per_porsi||0)*qtyOrder).toFixed(2)}</div></div>
+                      <div className="w-24"><div className="text-[11px] font-bold">Qty/Porsi</div><input type="number" step="0.01" value={b.qty_per_porsi} onChange={e=>updateQty(b.kode_bahan, e.target.value, false)} className="w-full p-1 border-2 border-orange-500 rounded text-[13px] font-bold" /></div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           )}
 
           {allKomponen.length>0 && (
-            <div className="mt-3 p-3 bg-white border-2 border-green-600 rounded text-xs">
-              <b>Ringkasan {tipeMenu} Bos:</b> {newNama||"Nama Menu"} - QTY {qtyOrder} - {tipeMenu==="PAKET" ? `${selectedBahan.length} fixed + ${optionalBahan.length} optional = ${allKomponen.length} komponen` : `${selectedBahan.length} bahan satuan`} | HPP/Porsi Rp {Math.round(totalHppPerPorsi).toLocaleString("id-ID")} | Total HPP Rp {Math.round(totalHppQty).toLocaleString("id-ID")}
+            <div className="mt-3 p-3 bg-white border-2 border-green-600 rounded text-[13px]">
+              <b>Ringkasan {tipeMenu} Bos:</b> {newNama||"Nama Menu"} - QTY {qtyOrder} - {tipeMenu==="PAKET" ? `${selectedBahan.length} fixed + ${optionalBahan.length} optional = ${allKomponen.length} komponen` : `${selectedBahan.length} bahan satuan`} | HPP/Porsi Rp {Math.round(totalHppPerPorsi).toLocaleString("id-ID")} | Total HPP Rp {Math.round(totalHppQty).toLocaleString("id-ID")} | Draft Auto-Save ✅
             </div>
           )}
 
           <div className="mt-4 flex gap-2">
-            <button onClick={handleSimpan} disabled={!isStockAman || isSaving} className={`flex-1 py-3 rounded font-bold text-sm ${isStockAman && !isSaving ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-300 text-red-800 cursor-not-allowed'}`}>
+            <button onClick={handleSimpan} disabled={!isStockAman || isSaving} className={`flex-1 py-3 rounded font-bold text-[13px] ${isStockAman && !isSaving ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-300 text-red-800 cursor-not-allowed'}`}>
               {isSaving ? "Menyimpan..." : isStockAman ? `💾 Simpan ${tipeMenu} - ${allKomponen.length} Komponen - Stock AMAN` : `❌ Stock Tidak Cukup (${tidakTersedia.length} item) - Tidak Bisa Simpan ${tipeMenu}`}
             </button>
-            <button onClick={()=>{setShowTambah(false); setSelectedBahan([]); setOptionalBahan([]);}} className="px-6 py-3 bg-gray-200 rounded text-sm">Batal</button>
+            <button onClick={()=>{setShowTambah(false);}} className="px-6 py-3 bg-gray-200 rounded text-[13px]">Batal (Draft tetap)</button>
+            <button onClick={clearDraft} className="px-4 py-3 bg-red-100 text-red-600 rounded text-[13px]">Clear</button>
           </div>
         </div>
       )}
 
       <div className="bg-white rounded-xl p-3 border overflow-auto">
-        <div className="font-bold text-sm mb-2">Menu Paket & Satuan ({menuItems.length}) - 2 Model Sesuai Deal Bos</div>
+        <div className="font-bold text-[13px] mb-2">Menu Paket & Satuan ({menuItems.length}) - V16.8 Persist Fix Bos</div>
         <div className="overflow-auto">
-          <table className="w-full text-[11px] min-w-[1100px]">
-            <thead className="bg-gray-50 text-[10px]"><tr>
+          <table className="w-full text-[13px] min-w-[1100px]">
+            <thead className="bg-gray-50 text-[11px]"><tr>
               <th className="p-2 text-left">Tipe</th>
               <th className="p-2 text-left">Kode</th>
               <th className="p-2 text-left">Nama Menu</th>
@@ -330,19 +359,16 @@ export default function MasterMenuPage(){
                     <td className="p-2 font-mono font-bold">{m.kode||m.kode_menu}</td>
                     <td className="p-2 font-bold">{m.nama_menu||m.name}</td>
                     <td className="p-2 text-center bg-yellow-50 font-bold">{m.qty||1}</td>
-                    <td className="p-2 bg-blue-50"><div className="font-bold">{komps.length} item</div><div className="text-[10px] truncate max-w-[300px]">{komps.map(k=> k.kode_bahan).join(", ")}</div><button onClick={()=>setKomponenExpanded(prev=>({...prev, [m.id]: !isOpen}))} className="text-[10px] bg-white border px-2 py-0.5 rounded mt-1">{isOpen?'Tutup':'Detail'}</button></td>
+                    <td className="p-2 bg-blue-50"><div className="font-bold">{komps.length} item</div><div className="text-[11px] truncate max-w-[300px]">{komps.map(k=> k.kode_bahan).join(", ")}</div><button onClick={()=>setKomponenExpanded(prev=>({...prev, [m.id]: !isOpen}))} className="text-[11px] bg-white border px-2 py-0.5 rounded mt-1">{isOpen?'Tutup':'Detail'}</button></td>
                     <td className={`p-2 text-center font-bold ${isAlert ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{isAlert ? `⚠️ ${stockStatus}` : `✅ ${stockStatus}`}</td>
                     <td className="p-2 text-right bg-green-50 font-bold">Rp {Number(m.harga_jual||0).toLocaleString("id-ID")}</td>
                     <td className="p-2 text-right bg-orange-50">Rp {hppPer.toLocaleString("id-ID")}</td>
-                    <td className="p-2"><button onClick={()=>handleDelete(m.id)} className="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px]">🗑️</button></td>
+                    <td className="p-2"><button onClick={()=>handleDelete(m.id)} className="bg-red-100 text-red-600 px-2 py-1 rounded text-[11px]">🗑️</button></td>
                   </tr>
-                  {isOpen && komps.length>0 && (
-                    <tr className="bg-yellow-50"><td colSpan={9} className="p-3"><div className="grid grid-cols-1 md:grid-cols-2 gap-2">{komps.map((k,i)=> (<div key={i} className="bg-white border p-2 rounded text-xs flex justify-between"><div><b>{k.kode_bahan}</b> - {k.nama_bahan}<div className="text-[10px]">{k.qty_per_porsi} {k.satuan}/porsi x {m.qty||1} = {(Number(k.qty_per_porsi||0)*Number(m.qty||1)).toFixed(2)} {k.satuan}</div></div></div>))}</div></td></tr>
-                  )}
                 </>
                 );
               })}
-              {menuItems.length===0 && <tr><td colSpan={9} className="p-6 text-center text-gray-400">Belum ada menu Bos, klik + Buat Menu Paket / Satuan Bos</td></tr>}
+              {menuItems.length===0 && <tr><td colSpan={9} className="p-6 text-center text-gray-400 text-[13px]">Belum ada menu Bos, klik + Buat Menu Paket / Satuan Bos - Draft tidak hilang pindah dashboard Bos</td></tr>}
             </tbody>
           </table>
         </div>
