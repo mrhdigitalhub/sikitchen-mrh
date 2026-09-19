@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchInventoryCompat } from "@/lib/inventoryCompat";
 
-// INVENTORY V16.1 - FIX GENERAL NOMOR TETAP + FIX TABLE inventory_items
+// INVENTORY V16.2 - FIX GENERAL + FLOW KATEGORI DULU BARU PREFIX - Table inventory_items
 export default function InventoryPage(){
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
@@ -113,7 +113,6 @@ export default function InventoryPage(){
       custom_value_1: quickMerek || "",
       kode_prefix: quickPrefix || "",
     };
-    // FIX TABLE: inventory_items bukan inventory
     const { error } = await supabase.from("inventory_items").update(payload).eq("id", quick.id);
     if(error){ alert("Gagal Bos: "+error.message); return; }
     alert(`Berhasil Bos: ${quick._kode_tampil} JADI ${kodeFinalBaru}`);
@@ -129,7 +128,6 @@ export default function InventoryPage(){
 
   async function handleSimpanTambah(){
     if(!newNama) return alert("Nama kosong Bos");
-    const kodeFixNorm = normalizeKode(newKodeKat);
     const { error } = await supabase.from("inventory_items").insert([{
       kode_bahan: newKodeDisplay,
       name: newNama,
@@ -164,15 +162,17 @@ export default function InventoryPage(){
 
       {showTambah && (
         <div className="bg-white border-2 border-green-400 p-4 rounded-xl my-3 shadow-lg">
-          <div className="font-bold text-sm">Tambah Bahan Baru - GENERAL V16.1</div>
+          <div className="font-bold text-sm">Tambah Bahan Baru - V16.2 FLOW BENAR</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
             <div><div className="text-xs font-bold">Nama Bahan</div><input value={newNama} onChange={e=>setNewNama(e.target.value)} className="w-full p-2 border rounded text-sm" /></div>
-            <div><div className="text-xs font-bold">Prefix</div><select value={newPrefix} onChange={e=>setNewPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
-            <div className="bg-blue-50 border-2 border-blue-500 p-2 rounded"><div className="text-xs font-bold">Kode Kategori</div>
+            {/* FLOW BENAR: KATEGORI DULU */}
+            <div className="bg-blue-50 border-2 border-blue-500 p-2 rounded"><div className="text-xs font-bold">1️⃣ Kode Kategori - PILIH DULU</div>
               <select value={newKodeKat} onChange={e=>setNewKodeKat(e.target.value)} className="w-full p-2 border rounded text-sm font-bold bg-white mt-1">
                 {masterKode.map(k=> <option key={k.kode} value={normalizeKode(k.kode)}>{normalizeKode(k.kode)} - {k.kategori_utama}</option>)}
               </select>
             </div>
+            {/* BARU PREFIX */}
+            <div><div className="text-xs font-bold">2️⃣ Prefix Hall/Orgk</div><select value={newPrefix} onChange={e=>setNewPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
             <div><div className="text-xs">Kode Final</div><input value={newKodeDisplay} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100" /></div>
             <div><div className="text-xs font-bold">Merek</div><input value={newMerek} onChange={e=>setNewMerek(e.target.value)} className="w-full p-2 border rounded text-sm" /></div>
             <div><div className="text-xs font-bold">id_halal_19</div><input value={newIdHalal} onChange={e=>setNewIdHalal(e.target.value)} placeholder="19 digit / kosong" className="w-full p-2 border rounded text-sm" maxLength={19} /></div>
@@ -183,21 +183,23 @@ export default function InventoryPage(){
 
       {quick && (
         <div className="bg-green-50 border-2 border-green-400 p-4 rounded-xl my-3 shadow-lg border-dashed">
-          <div className="font-bold text-green-800 text-sm">🛠️ V16.1 FIX GENERAL: NOMOR TETAP + TABLE inventory_items - Anti Error Schema Cache</div>
-          <div className="bg-yellow-100 border border-yellow-400 p-2 rounded text-xs mt-2">Bos, FIX GENERAL: kode = prefix baru + KATEGORI BARU + NOMOR LAMA TETAP. SAYURAN→SAYUR, HEWANI→DAGING. Table fix inventory_items.</div>
+          <div className="font-bold text-green-800 text-sm">🛠️ V16.2 FLOW BENAR: KATEGORI DULU BARU PREFIX - GENERAL NOMOR TETAP</div>
+          <div className="bg-yellow-100 border border-yellow-400 p-2 rounded text-xs mt-2">Flow: Nama → 1️⃣ Kategori (SAYUR/BERAS) → 2️⃣ Prefix Hall/Orgk → Kode Final = Prefix + Kategori + Nomor Tetap {quick._nomor}. Anti duplicate.</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
             <div><div className="text-xs font-bold">Nama Bahan</div><input value={quick._nama_fix} disabled className="w-full p-2 border rounded bg-gray-100 text-sm" /></div>
-            <div><div className="text-xs font-bold">Prefix Hall/Orgk (Biasa di-delete)</div><select value={quickPrefix} onChange={e=>setQuickPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
-            <div className="bg-blue-50 border-2 border-blue-500 p-2 rounded"><div className="text-xs font-bold">Kode Kategori - GENERAL SEMUA KATEGORI</div>
+            {/* SWAP: KATEGORI DI POSISI PREFIX TADI */}
+            <div className="bg-blue-50 border-2 border-blue-500 p-2 rounded"><div className="text-xs font-bold">1️⃣ Kode Kategori - PILIH DULU (FLOW BENAR)</div>
               <select value={quickKodeKat} onChange={e=>setQuickKodeKat(e.target.value)} className="w-full p-2 border-2 border-blue-600 rounded text-sm font-bold bg-white mt-1">
                 {masterKode.map(k=> <option key={k.kode} value={normalizeKode(k.kode)}>{normalizeKode(k.kode)} - {k.kategori_utama}</option>)}
               </select>
             </div>
-            <div><div className="text-xs">Kode Final Baru (GENERAL - Nomor Tetap {quick._nomor})</div><input value={getKodeFinalBaruGeneral()} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100 text-green-800" /></div>
-            <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek (custom_value_1)</div><input value={quickMerek} onChange={e=>setQuickMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm font-bold mt-1" autoFocus /></div>
-            <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 SAJA (Auto kosong Orgk)</div><input value={quickIdHalal} onChange={e=>setQuickIdHalal(e.target.value)} placeholder="Auto kosong untuk Orgk" className="w-full p-2 border-2 border-yellow-500 rounded text-sm font-bold mt-1" maxLength={19} /></div>
+            {/* PREFIX PINDAH KE KANAN */}
+            <div><div className="text-xs font-bold">2️⃣ Prefix Hall/Orgk (Biasa di-delete)</div><select value={quickPrefix} onChange={e=>setQuickPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
+            <div><div className="text-xs">3️⃣ Kode Final Baru (GENERAL - Nomor Tetap {quick._nomor})</div><input value={getKodeFinalBaruGeneral()} disabled className="w-full p-2 border-2 border-green-500 rounded text-sm font-mono font-bold bg-green-100 text-green-800" /></div>
+            <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">4️⃣ Merek (custom_value_1)</div><input value={quickMerek} onChange={e=>setQuickMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm font-bold mt-1" autoFocus /></div>
+            <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">5️⃣ id_halal_19 SAJA (Auto kosong Orgk)</div><input value={quickIdHalal} onChange={e=>setQuickIdHalal(e.target.value)} placeholder="Auto kosong untuk Orgk" className="w-full p-2 border-2 border-yellow-500 rounded text-sm font-bold mt-1" maxLength={19} /></div>
           </div>
-          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update V16.1 GENERAL - {quick._kode_tampil} JADI {getKodeFinalBaruGeneral()}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update V16.2 FLOW BENAR - {quick._kode_tampil} JADI {getKodeFinalBaruGeneral()}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
