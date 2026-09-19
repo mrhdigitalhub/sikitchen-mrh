@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchInventoryCompat } from "@/lib/inventoryCompat";
 
-// INVENTORY V16.0 - FIX GENERAL NOMOR TETAP - Anti Duplicate 001
+// INVENTORY V16.1 - FIX GENERAL NOMOR TETAP + FIX TABLE inventory_items
 export default function InventoryPage(){
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
@@ -30,16 +30,14 @@ export default function InventoryPage(){
   const [newIdHalal, setNewIdHalal] = useState("");
   const [newMerek, setNewMerek] = useState("");
 
-  // NORMALISASI GENERAL - semua varian lama -> kode baku
   const normalizeKode = (kode) => {
     let k = (kode||"").toUpperCase();
     if(k==="SAYURAN") k="SAYUR";
     if(k==="HEWANI") k="DAGING";
-    if(k==="SAYUR-SAYURAN") k="SAYUR";
     return k;
   };
 
-  const newKategoriUtama = mapKodeKeUtama[normalizeKode(newKodeKat)] || mapKodeKeUtama[newKodeKat] || "Bahan Baku Utama";
+  const newKategoriUtama = mapKodeKeUtama[normalizeKode(newKodeKat)] || "Bahan Baku Utama";
   const numsForUtama = items.filter(i=> (i._utama||"")===newKategoriUtama).map(i=> parseInt((i._nomor||"0").toString().replace(/\D/g,""))||0);
   const maxNoUtama = numsForUtama.length ? Math.max(...numsForUtama) : 0;
   const nextNoForKode = maxNoUtama + 1;
@@ -58,7 +56,6 @@ export default function InventoryPage(){
     if(!katData || katData.length===0){
       katList = [{nama:"Bahan Baku Utama"},{nama:"Bahan Kemasan"},{nama:"Bahan Pembersih"},{nama:"Bahan Hewani"},{nama:"Bahan Nabati"},{nama:"Bahan Hewani Non Sembelihan"},{nama:"Bahan Susu"},{nama:"Bahan Fermentasi Alami"},{nama:"Bahan Minyak dan Lemak"},{nama:"Bahan Bumbu Instan"},{nama:"Bahan Sayuran"},{nama:"Bahan Buah Segar"},{nama:"Bahan Penyedap Rasa"},{nama:"Bahan Rempah Alami"},{nama:"Bahan Pelengkap"},];
     }
-    // normalisasi map juga
     kodeList.forEach(k=> { const nk = normalizeKode(k.kode); map[nk]=k.kategori_utama; map[k.kode]=k.kategori_utama; });
     setMasterKode(kodeList); setMasterKategori(katList); setMapKodeKeUtama(map);
     try{
@@ -102,7 +99,6 @@ export default function InventoryPage(){
     const tambah = Number(quickStock||0); const stockLama = Number(quick.stok||quick.stock||0);
     const stockBaruTotal = tambah ? stockLama + tambah : stockLama;
     const kodeFixNorm = normalizeKode(quickKodeKat);
-    // V16 FIX GENERAL: nomor TETAP pakai nomor lama, tidak generate max+1
     const nomorTetap = quick._nomor;
     const kodeFinalBaru = quickPrefix ? `${quickPrefix}-${kodeFixNorm}-${nomorTetap}` : `${kodeFixNorm}-${nomorTetap}`;
     const kategoriUtamaBaru = mapKodeKeUtama[kodeFixNorm] || quick._utama || "Bahan Baku Utama";
@@ -117,15 +113,16 @@ export default function InventoryPage(){
       custom_value_1: quickMerek || "",
       kode_prefix: quickPrefix || "",
     };
-    const { error } = await supabase.from("inventory").update(payload).eq("id", quick.id);
-    if(error){ alert("Gagal: "+error.message); return; }
+    // FIX TABLE: inventory_items bukan inventory
+    const { error } = await supabase.from("inventory_items").update(payload).eq("id", quick.id);
+    if(error){ alert("Gagal Bos: "+error.message); return; }
     alert(`Berhasil Bos: ${quick._kode_tampil} JADI ${kodeFinalBaru}`);
     setQuick(null); loadMasterAndData();
   }
 
   async function handleDelete(item){
     if(!confirm(`Hapus ${item._nama_fix}?`)) return;
-    const { error } = await supabase.from("inventory").delete().eq("id", item.id);
+    const { error } = await supabase.from("inventory_items").delete().eq("id", item.id);
     if(error){ alert(error.message); return; }
     loadMasterAndData();
   }
@@ -133,7 +130,7 @@ export default function InventoryPage(){
   async function handleSimpanTambah(){
     if(!newNama) return alert("Nama kosong Bos");
     const kodeFixNorm = normalizeKode(newKodeKat);
-    const { error } = await supabase.from("inventory").insert([{
+    const { error } = await supabase.from("inventory_items").insert([{
       kode_bahan: newKodeDisplay,
       name: newNama,
       nama_bahan: newNama,
@@ -148,11 +145,10 @@ export default function InventoryPage(){
     setShowTambah(false); setNewNama(""); loadMasterAndData();
   }
 
-  // FIX GENERAL KODE FINAL BARU - nomor tetap
   function getKodeFinalBaruGeneral(){
     if(!quick) return "";
     const kodeFixNorm = normalizeKode(quickKodeKat);
-    const nomorTetap = quick._nomor; // TETAP
+    const nomorTetap = quick._nomor;
     return quickPrefix ? `${quickPrefix}-${kodeFixNorm}-${nomorTetap}` : `${kodeFixNorm}-${nomorTetap}`;
   }
 
@@ -168,7 +164,7 @@ export default function InventoryPage(){
 
       {showTambah && (
         <div className="bg-white border-2 border-green-400 p-4 rounded-xl my-3 shadow-lg">
-          <div className="font-bold text-sm">Tambah Bahan Baru - GENERAL</div>
+          <div className="font-bold text-sm">Tambah Bahan Baru - GENERAL V16.1</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
             <div><div className="text-xs font-bold">Nama Bahan</div><input value={newNama} onChange={e=>setNewNama(e.target.value)} className="w-full p-2 border rounded text-sm" /></div>
             <div><div className="text-xs font-bold">Prefix</div><select value={newPrefix} onChange={e=>setNewPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
@@ -187,8 +183,8 @@ export default function InventoryPage(){
 
       {quick && (
         <div className="bg-green-50 border-2 border-green-400 p-4 rounded-xl my-3 shadow-lg border-dashed">
-          <div className="font-bold text-green-800 text-sm">🛠️ V16.0 FIX GENERAL: NOMOR TETAP - Anti Duplicate 001 - Berlaku Semua Bahan</div>
-          <div className="bg-yellow-100 border border-yellow-400 p-2 rounded text-xs mt-2">Bos, FIX GENERAL: kode_bahan baru = prefix_baru + KATEGORI_BARU + NOMOR_LAMA (tetap). Tidak generate 001 lagi Bos. SAYURAN otomatis jadi SAYUR, HEWANI jadi DAGING.</div>
+          <div className="font-bold text-green-800 text-sm">🛠️ V16.1 FIX GENERAL: NOMOR TETAP + TABLE inventory_items - Anti Error Schema Cache</div>
+          <div className="bg-yellow-100 border border-yellow-400 p-2 rounded text-xs mt-2">Bos, FIX GENERAL: kode = prefix baru + KATEGORI BARU + NOMOR LAMA TETAP. SAYURAN→SAYUR, HEWANI→DAGING. Table fix inventory_items.</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
             <div><div className="text-xs font-bold">Nama Bahan</div><input value={quick._nama_fix} disabled className="w-full p-2 border rounded bg-gray-100 text-sm" /></div>
             <div><div className="text-xs font-bold">Prefix Hall/Orgk (Biasa di-delete)</div><select value={quickPrefix} onChange={e=>setQuickPrefix(e.target.value)} className="w-full p-2 border-2 border-green-500 rounded text-sm font-bold"><option value="">Biasa</option><option value="Hall">Hall-</option><option value="Orgk">Orgk-</option></select></div>
@@ -201,7 +197,7 @@ export default function InventoryPage(){
             <div className="bg-purple-50 border-2 border-purple-400 p-2 rounded"><div className="text-xs font-bold">Merek (custom_value_1)</div><input value={quickMerek} onChange={e=>setQuickMerek(e.target.value)} placeholder="Sania" className="w-full p-2 border-2 border-purple-500 rounded text-sm font-bold mt-1" autoFocus /></div>
             <div className="bg-yellow-50 border-2 border-yellow-500 p-2 rounded"><div className="text-xs font-bold">id_halal_19 SAJA (Auto kosong Orgk)</div><input value={quickIdHalal} onChange={e=>setQuickIdHalal(e.target.value)} placeholder="Auto kosong untuk Orgk" className="w-full p-2 border-2 border-yellow-500 rounded text-sm font-bold mt-1" maxLength={19} /></div>
           </div>
-          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update V16 GENERAL - {quick._kode_tampil} JADI {getKodeFinalBaruGeneral()}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
+          <div className="mt-4 flex gap-2"><button onClick={handleUpdate} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold text-sm">💾 Update V16.1 GENERAL - {quick._kode_tampil} JADI {getKodeFinalBaruGeneral()}</button><button onClick={()=>handleDelete(quick)} className="px-4 py-3 bg-red-600 text-white rounded text-sm font-bold">🗑️ Delete</button><button onClick={()=>setQuick(null)} className="px-4 py-3 bg-gray-200 rounded text-sm">Batal</button></div>
         </div>
       )}
 
